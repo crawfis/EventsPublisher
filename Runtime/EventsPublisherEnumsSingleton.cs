@@ -4,13 +4,13 @@ using UnityEngine;
 
 namespace CrawfisSoftware.Events
 {
-    internal class EventsPublisherEnumsSingleton<T> : MonoBehaviour where T : Enum
+    public class EventsPublisherEnumsSingleton<T> : MonoBehaviour where T : Enum
     {
         public static EventsPublisherEnumsSingleton<T> Instance { get; private set; }
         private EventsPublisherEnums<T> _eventsPublisher;
         private void Awake()
         {
-            if (Instance == null && Instance != this)
+            if (Instance != null && Instance != this)
             {
                 Destroy(this);
                 return;
@@ -42,5 +42,12 @@ namespace CrawfisSoftware.Events
             }
         }
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
+        public static void ResetOnPlayMode()
+        {
+            //#if UNITY_EDITOR
+            Instance = null;
+            //#endif
+        }
     }
 }
