@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace CrawfisSoftware.Events
 {
-    internal class EventsPublisherInternal : IEventsPublisher
+    internal class EventsPublisherInternal : IEventsPublisher<string>
     {
         // Define the events that occur in the game
         private readonly Dictionary<string, Action<string, object, object>> events = new Dictionary<string, Action<string, object, object>>();
@@ -87,15 +87,6 @@ namespace CrawfisSoftware.Events
         {
             events.Clear();
             allSubscribers.Clear();
-        }
-
-        void IEventsPublisher.Push()
-        {
-        }
-
-        IEventsPublisher IEventsPublisher.Pop()
-        {
-            return this;
         }
     }
 }

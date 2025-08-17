@@ -1,9 +1,5 @@
-﻿using CrawfisSoftware.Events;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
-
-using UnityEngine;
 
 namespace CrawfisSoftware.Events
 {
@@ -11,9 +7,9 @@ namespace CrawfisSoftware.Events
     /// The EventsPublisher is a singleton that manages event publishing and subscription.
     /// It allows for nested publishers, enabling a stack-like behavior for event management.
     /// </summary>
-    public class EventsPublisher : IEventsPublisher
+    public class EventsPublisher : IStackEventsPublisher<string>
     {
-        public static IEventsPublisher Instance { get; private set; }
+        public static IStackEventsPublisher<string> Instance { get; private set; }
 
         static EventsPublisher()
         {
@@ -22,15 +18,15 @@ namespace CrawfisSoftware.Events
         }
         private EventsPublisher() { }
 
-        private readonly Stack<IEventsPublisher> _eventsPublishers = new Stack<IEventsPublisher>();
+        private readonly Stack<IEventsPublisher<string>> _eventsPublishers = new Stack<IEventsPublisher<string>>();
 
         public void Push()
         {
-            IEventsPublisher eventsPublisher = new EventsPublisherInternal();
+            IEventsPublisher<string> eventsPublisher = new EventsPublisherInternal();
             _eventsPublishers.Push(eventsPublisher);
         }
 
-        public IEventsPublisher Pop()
+        public IEventsPublisher<string> Pop()
         {
             return _eventsPublishers.Pop();
         }
@@ -45,7 +41,7 @@ namespace CrawfisSoftware.Events
 
         public void PublishEvent(string eventName, object sender, object data)
         {
-            foreach (IEventsPublisher publisher in _eventsPublishers) { publisher.PublishEvent(eventName, sender, data); }
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers) { publisher.PublishEvent(eventName, sender, data); }
         }
 
         public void RegisterEvent(string eventName)
@@ -75,7 +71,7 @@ namespace CrawfisSoftware.Events
 
         public void Clear()
         {
-            foreach (IEventsPublisher publisher in _eventsPublishers)
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers)
             {
                 publisher.Clear();
             }
