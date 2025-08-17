@@ -10,7 +10,7 @@ namespace CrawfisSoftware.Events
         // Define the events that occur in the game
         private readonly Dictionary<string, Action<object, object>> events = new Dictionary<string, Action<object, object>>();
         private readonly List<Action<string, object, object>> allSubscribers = new List<Action<string, object, object>>();
-        private Queue<(string eventName, Delegate callback, object sender, object data)> _callbackQueue = new();
+        private Queue<(string eventName, Delegate callback, object sender, object data)> _callbackQueue = new Queue<(string eventName, Delegate callback, object sender, object data)>();
 
         public void RegisterEvent(string eventName)
         {
