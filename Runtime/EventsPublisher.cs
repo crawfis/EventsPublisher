@@ -9,6 +9,9 @@ namespace CrawfisSoftware.Events
     /// </summary>
     public class EventsPublisher : IStackEventsPublisher<string>
     {
+        /// <summary>
+        /// Gets the singleton instance of the <see cref="IStackEventsPublisher{T}"/> for publishing stack events.
+        /// </summary>
         public static IStackEventsPublisher<string> Instance { get; private set; }
 
         static EventsPublisher()
@@ -20,17 +23,20 @@ namespace CrawfisSoftware.Events
 
         private readonly Stack<IEventsPublisher<string>> _eventsPublishers = new Stack<IEventsPublisher<string>>();
 
+        /// <inheritdoc/>
         public void Push()
         {
             IEventsPublisher<string> eventsPublisher = new EventsPublisherInternal();
             _eventsPublishers.Push(eventsPublisher);
         }
 
+        /// <inheritdoc/>
         public IEventsPublisher<string> Pop()
         {
             return _eventsPublishers.Pop();
         }
 
+        /// <inheritdoc/>
         public IEnumerable<string> GetRegisteredEvents()
         {
             foreach (var publisher in _eventsPublishers)
@@ -39,16 +45,19 @@ namespace CrawfisSoftware.Events
             }
         }
 
+        /// <inheritdoc/>
         public void PublishEvent(string eventName, object sender, object data)
         {
             foreach (IEventsPublisher<string> publisher in _eventsPublishers) { publisher.PublishEvent(eventName, sender, data); }
         }
 
+        /// <inheritdoc/>
         public void RegisterEvent(string eventName)
         {
             _eventsPublishers.Peek().RegisterEvent(eventName);
         }
 
+        /// <inheritdoc/>
         public void SubscribeToAllEvents(Action<string, object, object> callback)
         {
             _eventsPublishers.Peek().SubscribeToAllEvents(callback);
@@ -59,16 +68,21 @@ namespace CrawfisSoftware.Events
             _eventsPublishers.Peek().SubscribeToEvent(eventName, callback);
         }
 
+        /// <inheritdoc/>
         public void UnsubscribeToAllEvents(Action<string, object, object> callback)
         {
             _eventsPublishers.Peek().UnsubscribeToAllEvents(callback);
         }
 
+        /// <inheritdoc/>
         public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
             _eventsPublishers.Peek().UnsubscribeToEvent(eventName, callback);
         }
 
+        /// <summary>
+        /// Clears all events and subscriptions from all publishers in the stack.
+        /// </summary>
         public void Clear()
         {
             foreach (IEventsPublisher<string> publisher in _eventsPublishers)
