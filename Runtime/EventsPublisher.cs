@@ -58,7 +58,7 @@ namespace CrawfisSoftware.Events
             _eventsPublishers.Peek().SubscribeToAllEvents(callback);
         }
 
-        public void SubscribeToEvent(string eventName, Action<object, object> callback)
+        public void SubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
             _eventsPublishers.Peek().SubscribeToEvent(eventName, callback);
         }
@@ -68,7 +68,7 @@ namespace CrawfisSoftware.Events
             _eventsPublishers.Peek().UnsubscribeToAllEvents(callback);
         }
 
-        public void UnsubscribeToEvent(string eventName, Action<object, object> callback)
+        public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
             _eventsPublishers.Peek().UnsubscribeToEvent(eventName, callback);
         }

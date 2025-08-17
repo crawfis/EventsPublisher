@@ -29,12 +29,12 @@ namespace CrawfisSoftware.Events
             EventsPublisher.Instance.PublishEvent(eventEnum.ToString(), sender, data);
         }
 
-        public void SubscribeToEvent(T eventEnum, Action<object, object> callback)
+        public void SubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
             EventsPublisher.Instance.SubscribeToEvent(eventEnum.ToString(), callback);
         }
 
-        public void UnsubscribeToEvent(T eventEnum, Action<object, object> callback)
+        public void UnsubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
             EventsPublisher.Instance.UnsubscribeToEvent(eventEnum.ToString(), callback);
         }

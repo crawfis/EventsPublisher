@@ -8,7 +8,7 @@ namespace CrawfisSoftware.Events
     internal class EventsPublisherInternal : IEventsPublisher
     {
         // Define the events that occur in the game
-        private readonly Dictionary<string, Action<object, object>> events = new Dictionary<string, Action<object, object>>();
+        private readonly Dictionary<string, Action<string, object, object>> events = new Dictionary<string, Action<string, object, object>>();
         private readonly List<Action<string, object, object>> allSubscribers = new List<Action<string, object, object>>();
         private Queue<(string eventName, Delegate callback, object sender, object data)> _callbackQueue = new Queue<(string eventName, Delegate callback, object sender, object data)>();
 
@@ -19,16 +19,16 @@ namespace CrawfisSoftware.Events
                 events.Add(eventName, NullCallback);
             }
         }
-        public void SubscribeToEvent(string eventName, Action<object, object> callback)
+        public void SubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
             RegisterEvent(eventName);
-            if (events.ContainsKey(eventName))
+            if (events.ContainsKey(eventName) && callback != null)
                 events[eventName] += callback;
         }
 
-        public void UnsubscribeToEvent(string eventName, Action<object, object> callback)
+        public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
-            if (events.ContainsKey(eventName))
+            if (events.ContainsKey(eventName) && callback != null)
                 events[eventName] -= callback;
         }
 
@@ -44,7 +44,7 @@ namespace CrawfisSoftware.Events
 
         public void PublishEvent(string eventName, object sender, object data)
         {
-            if (events.TryGetValue(eventName, out Action<object, object> eventDelegate))
+            if (events.TryGetValue(eventName, out Action<string, object, object> eventDelegate))
             {
                 //eventDelegate(sender, data);
                 var callbacks = eventDelegate.GetInvocationList();
@@ -52,7 +52,7 @@ namespace CrawfisSoftware.Events
                 // Queue up each callback. This ensures that if a callback publishes an event, that the
                 // other callbacks for *this* event are called before the newly published event's callbacks.
                 foreach (var callback in callbacks)
-                    _callbackQueue.Enqueue((string.Empty, callback, sender, data));
+                    _callbackQueue.Enqueue((eventName, callback, sender, data));
             }
             foreach (var handler in allSubscribers)
                 _callbackQueue.Enqueue((eventName, handler, sender, data));
@@ -65,10 +65,7 @@ namespace CrawfisSoftware.Events
                 var callback = message.callback;
                 try
                 {
-                    if (string.IsNullOrEmpty(eventName))
-                        callback.DynamicInvoke(message.sender, message.data);
-                    else
-                        callback.DynamicInvoke(eventName, message.sender, message.data);
+                    callback.DynamicInvoke(eventName, message.sender, message.data);
                 }
                 catch (Exception e)
                 {
@@ -82,7 +79,7 @@ namespace CrawfisSoftware.Events
             return events.Keys;
         }
 
-        private void NullCallback(object sender, object data)
+        private void NullCallback(string eventName, object sender, object data)
         {
         }
 
