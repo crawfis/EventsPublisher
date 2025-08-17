@@ -1,0 +1,28 @@
+{
+  "name": "com.crawfissoftware.eventspublisher",
+  "displayName": "Events Publisher",
+  "version": "2.1.0",
+  "unity": "2022.3",
+  "description": "Lightweight, allocation-safe event/messaging publisher for Unity projects. Editor tooling included.",
+  "keywords": [ "events", "messaging", "publisher", "observer", "csharp", "unity" ],
+  "author": {
+    "name": "Roger Crawfis",
+    "url": "https://github.com/crawfis"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crawfis/eventspublisher.git"
+  },
+  "documentationUrl": "https://github.com/crawfis/eventspublisher#readme",
+  "changelogUrl": "https://github.com/crawfis/eventspublisher/releases",
+  "licensesUrl": "https://github.com/crawfis/eventspublisher/blob/main/LICENSE",
+  "dependencies": {
+  },
+  "samples": [
+    {
+      "displayName": "Basic Usage",
+      "description": "Minimal scene and scripts demonstrating publish/subscribe setup.",
+      "path": "Samples~/Basic Usage"
+    }
+  ]
+}

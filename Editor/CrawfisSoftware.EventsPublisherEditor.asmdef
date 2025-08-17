@@ -1,0 +1,6 @@
+{
+	"name": "CrawfisSoftware.EventsPublisher.Editor",
+	"references": [
+		"CrawfisSoftware.EventsPublisher"
+	]
+}
