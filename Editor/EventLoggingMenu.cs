@@ -6,6 +6,7 @@ using UnityEngine;
 
 namespace CrawfisSoftware.Events.Editor
 {
+    [InitializeOnLoad]
     public class EventLoggingMenu : EditorWindow
     {
         private const string MENU_LOCATION = "CrawfisSoftware/Events/Event Logging Enabled";
@@ -30,12 +31,20 @@ namespace CrawfisSoftware.Events.Editor
             return true;
         }
 
-        [InitializeOnEnterPlayMode]
-        private static void OnPlay()
+        static EventLoggingMenu()
         {
-            if (IsEnabled)
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.EnteredPlayMode && IsEnabled)
             {
                 EventsPublisher.Instance.SubscribeToAllEvents(OnEvent);
+            }
+            else if (state == PlayModeStateChange.ExitingPlayMode && IsEnabled)
+            {
+                EventsPublisher.Instance.UnsubscribeToAllEvents(OnEvent);
             }
         }
 
