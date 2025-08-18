@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace CrawfisSoftware.Events
 {
@@ -77,20 +78,20 @@ namespace CrawfisSoftware.Events
             return events.Keys;
         }
 
-        public IEnumerable<(string methodName, string targetName)> GetSubscribers()
+        public IEnumerable<(string eventName, string typeName)> GetSubscribers()
         {
             foreach (var eventName in events.Keys)
             {
                 if (events.TryGetValue(eventName, out var eventDelegate) && eventDelegate != null)
                 {
-                    foreach (var handler in eventDelegate.GetInvocationList())
+                    foreach (var handler in eventDelegate.GetInvocationList().Skip(1))
                     {
-                        yield return (eventName, handler.Target.ToString());
+                        yield return (eventName, handler.Method.DeclaringType.ToString());
                     }
                 }
             }
             foreach (var handler in allSubscribers)
-                yield return ("all events", handler.Target.ToString());
+                yield return ("all events", handler.Method.DeclaringType.ToString());
         }
 
         private void NullCallback(string eventName, object sender, object data)
