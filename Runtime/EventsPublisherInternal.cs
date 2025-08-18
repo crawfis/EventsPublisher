@@ -1,6 +1,4 @@
-﻿using CrawfisSoftware.Events;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace CrawfisSoftware.Events
@@ -77,6 +75,17 @@ namespace CrawfisSoftware.Events
         public IEnumerable<string> GetRegisteredEvents()
         {
             return events.Keys;
+        }
+
+        public IEnumerable<(string methodName, string targetName)> LogEventSubscribers(string eventName)
+        {
+            if (events.TryGetValue(eventName, out var eventDelegate) && eventDelegate != null)
+            {
+                foreach (var handler in eventDelegate.GetInvocationList())
+                {
+                    yield return (handler.Method.Name, handler.Target.ToString());
+                }
+            }
         }
 
         private void NullCallback(string eventName, object sender, object data)
