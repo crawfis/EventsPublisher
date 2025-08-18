@@ -90,13 +90,13 @@ namespace CrawfisSoftware.Events
                 publisher.Clear();
             }
         }
-        public IEnumerable<(string methodName, string targetName)> LogEventSubscribers(string eventName)
+        public IEnumerable<(string methodName, string targetName)> GetSubscribers()
         {
             foreach (IEventsPublisher<string> publisher in _eventsPublishers)
             {
                 if (publisher is EventsPublisherInternal internalPublisher)
                 {
-                    foreach (var log in internalPublisher.LogEventSubscribers(eventName))
+                    foreach (var log in internalPublisher.GetSubscribers())
                     {
                         yield return log;
                     }

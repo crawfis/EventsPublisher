@@ -77,15 +77,20 @@ namespace CrawfisSoftware.Events
             return events.Keys;
         }
 
-        public IEnumerable<(string methodName, string targetName)> LogEventSubscribers(string eventName)
+        public IEnumerable<(string methodName, string targetName)> GetSubscribers()
         {
-            if (events.TryGetValue(eventName, out var eventDelegate) && eventDelegate != null)
+            foreach (var eventName in events.Keys)
             {
-                foreach (var handler in eventDelegate.GetInvocationList())
+                if (events.TryGetValue(eventName, out var eventDelegate) && eventDelegate != null)
                 {
-                    yield return (handler.Method.Name, handler.Target.ToString());
+                    foreach (var handler in eventDelegate.GetInvocationList())
+                    {
+                        yield return (eventName, handler.Target.ToString());
+                    }
                 }
             }
+            foreach (var handler in allSubscribers)
+                yield return ("all events", handler.Target.ToString());
         }
 
         private void NullCallback(string eventName, object sender, object data)
