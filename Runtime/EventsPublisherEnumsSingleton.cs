@@ -68,12 +68,12 @@ namespace CrawfisSoftware.Events
             }
         }
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-        private static void ResetOnPlayMode()
-        {
-            //#if UNITY_EDITOR
-            Instance = null;
-            //#endif
-        }
+        //[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
+        //private static void ResetOnPlayMode()
+        //{
+        //    //#if UNITY_EDITOR
+        //    Instance = null;
+        //    //#endif
+        //}
     }
 }
