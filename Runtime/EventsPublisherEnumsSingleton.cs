@@ -12,7 +12,7 @@ namespace CrawfisSoftware.Events
         {
             if (Instance != null && Instance != this)
             {
-                Destroy(this);
+                Destroy(Instance);
                 return;
             }
             Instance = this;
@@ -68,12 +68,22 @@ namespace CrawfisSoftware.Events
             }
         }
 
-        //[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-        //private static void ResetOnPlayMode()
-        //{
-        //    //#if UNITY_EDITOR
-        //    Instance = null;
-        //    //#endif
-        //}
+        public void SubscribeToAllEnumEvents(Action<string, object, object> callback)
+        {
+            foreach (T eventEnum in Enum.GetValues(typeof(T)))
+            {
+                string eventName = eventEnum.ToString();
+                EventsPublisher.Instance.SubscribeToEvent(eventName, callback);
+            }
+        }
+
+        public void UnsubscribeToAllEnumEvents(Action<string, object, object> callback)
+        {
+            foreach (T eventEnum in Enum.GetValues(typeof(T)))
+            {
+                string eventName = eventEnum.ToString();
+                EventsPublisher.Instance.UnsubscribeToEvent(eventName, callback);
+            }
+        }
     }
 }

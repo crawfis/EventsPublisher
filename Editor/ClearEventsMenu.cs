@@ -1,0 +1,53 @@
+using CrawfisSoftware.Events;
+
+using System.Diagnostics;
+
+using UnityEditor;
+
+using UnityEngine;
+
+using static System.Net.Mime.MediaTypeNames;
+
+namespace CrawfisSoftware.Events.Editor
+{
+    [InitializeOnLoad]
+    public class ClearEventsMenu : EditorWindow
+    {
+        private const string CLEAR_NOW_MENU_LOCATION = "CrawfisSoftware/Events/Clear Now";
+        private const string TOGGLE_MENU_LOCATION = "CrawfisSoftware/Events/Clear Events on Exiting Play Mode";
+        private const string SettingName = "DoClearEvents";
+
+        public static bool IsEnabled
+        {
+            get { return SessionState.GetBool(SettingName, false); }
+            set { SessionState.SetBool(SettingName, value); ManageSubscription(); }
+        }
+
+
+        [MenuItem(CLEAR_NOW_MENU_LOCATION)]
+        private static void Clear()
+        {
+            EventsPublisher.Instance.Clear();
+        }
+
+        [MenuItem(TOGGLE_MENU_LOCATION, true)]
+        private static bool ToggleActionValidate()
+        {
+            Menu.SetChecked(TOGGLE_MENU_LOCATION, IsEnabled);
+            return true;
+        }
+
+        static EventLoggingMenu()
+        {
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            else if (state == PlayModeStateChange.ExitingPlayMode && IsEnabled)
+            {
+                EventsPublisher.Instance.Clear();
+            }
+        }
+    }
+}

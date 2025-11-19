@@ -9,7 +9,7 @@ namespace CrawfisSoftware.Events.Editor
     [InitializeOnLoad]
     public class EventLoggingMenu : EditorWindow
     {
-        private const string MENU_LOCATION = "CrawfisSoftware/Events/Event Logging Enabled";
+        private const string MENU_LOCATION = "CrawfisSoftware/Events/Log Events";
         private const string SettingName = "DoLogEvents";
 
         public static bool IsEnabled
