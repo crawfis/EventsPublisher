@@ -6,8 +6,6 @@ using UnityEditor;
 
 using UnityEngine;
 
-using static System.Net.Mime.MediaTypeNames;
-
 namespace CrawfisSoftware.Events.Editor
 {
     [InitializeOnLoad]
@@ -20,7 +18,7 @@ namespace CrawfisSoftware.Events.Editor
         public static bool IsEnabled
         {
             get { return SessionState.GetBool(SettingName, false); }
-            set { SessionState.SetBool(SettingName, value); ManageSubscription(); }
+            set { SessionState.SetBool(SettingName, value); }
         }
 
 
@@ -37,14 +35,14 @@ namespace CrawfisSoftware.Events.Editor
             return true;
         }
 
-        static EventLoggingMenu()
+        static void EventLoggingMenu()
         {
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
         }
 
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
-            else if (state == PlayModeStateChange.ExitingPlayMode && IsEnabled)
+            if (state == PlayModeStateChange.ExitingPlayMode && IsEnabled)
             {
                 EventsPublisher.Instance.Clear();
             }
