@@ -33,11 +33,15 @@ namespace CrawfisSoftware.Events.Editor
         [MenuItem(LIST_SUBSCRIBERS_MENU_LOCATION)]
         private static void ListSubscribers()
         {
+            UnityEngine.Debug.Log("Listing all current subscribers ...");
             EventsPublisher publisher = (EventsPublisher)(EventsPublisher.Instance);
+            int count = 0;
             foreach ((string eventName, string targetName) subscriberData in publisher.GetSubscribers())
             {
-                UnityEngine.Debug.LogWarning($"{subscriberData.targetName} is subscribed to {subscriberData.eventName}.");
+                UnityEngine.Debug.Log($"{subscriberData.targetName} is subscribed to {subscriberData.eventName}.");
+                count++;
             }
+            UnityEngine.Debug.Log($"   ....  {count} subscribers listed");
         }
 
         [MenuItem(TOGGLE_MENU_LOCATION, true)]
