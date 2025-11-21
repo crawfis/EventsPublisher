@@ -1,7 +1,7 @@
 {
   "name": "com.crawfissoftware.eventspublisher",
   "displayName": "Events Publisher",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "unity": "2022.3",
   "description": "Lightweight, allocation-safe event/messaging publisher for Unity projects. Editor tooling included.",
   "keywords": [ "events", "messaging", "publisher", "observer", "csharp", "unity" ],

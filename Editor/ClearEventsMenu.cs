@@ -36,7 +36,7 @@ namespace CrawfisSoftware.Events.Editor
             EventsPublisher publisher = (EventsPublisher)(EventsPublisher.Instance);
             foreach ((string eventName, string targetName) subscriberData in publisher.GetSubscribers())
             {
-                UnityEngine.Debug.LogWarning($"{subscriberData.targetName} did not unsubscribe {subscriberData.eventName}.");
+                UnityEngine.Debug.LogWarning($"{subscriberData.targetName} is subscribed to {subscriberData.eventName}.");
             }
         }
 
