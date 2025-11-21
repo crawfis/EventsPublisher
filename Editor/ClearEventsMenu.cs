@@ -33,9 +33,10 @@ namespace CrawfisSoftware.Events.Editor
         [MenuItem(LIST_SUBSCRIBERS_MENU_LOCATION)]
         private static void ListSubscribers()
         {
+            EventsPublisher publisher = (EventsPublisher)(EventsPublisher.Instance);
             foreach ((string eventName, string targetName) subscriberData in publisher.GetSubscribers())
             {
-                Debug.LogWarning($"{subscriberData.targetName} did not unsubscribe {subscriberData.eventName}.");
+                UnityEngine.Debug.LogWarning($"{subscriberData.targetName} did not unsubscribe {subscriberData.eventName}.");
             }
         }
 
