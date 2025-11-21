@@ -1,6 +1,7 @@
 using CrawfisSoftware.Events;
 
 using System.Diagnostics;
+using System.Security.Policy;
 
 using UnityEditor;
 
@@ -12,6 +13,7 @@ namespace CrawfisSoftware.Events.Editor
     public class ClearEventsMenu : EditorWindow
     {
         private const string CLEAR_NOW_MENU_LOCATION = "CrawfisSoftware/Events/Clear Now";
+        private const string LIST_SUBSCRIBERS_MENU_LOCATION = "CrawfisSoftware/Events/List Current Subscribers";
         private const string TOGGLE_MENU_LOCATION = "CrawfisSoftware/Events/Clear Events on Exiting Play Mode";
         private const string SettingName = "DoClearEvents";
 
@@ -26,6 +28,15 @@ namespace CrawfisSoftware.Events.Editor
         private static void Clear()
         {
             EventsPublisher.Instance.Clear();
+        }
+
+        [MenuItem(LIST_SUBSCRIBERS_MENU_LOCATION)]
+        private static void ListSubscribers()
+        {
+            foreach ((string eventName, string targetName) subscriberData in publisher.GetSubscribers())
+            {
+                Debug.LogWarning($"{subscriberData.targetName} did not unsubscribe {subscriberData.eventName}.");
+            }
         }
 
         [MenuItem(TOGGLE_MENU_LOCATION, true)]
