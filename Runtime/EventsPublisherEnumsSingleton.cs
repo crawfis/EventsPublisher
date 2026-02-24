@@ -17,7 +17,7 @@ namespace CrawfisSoftware.Events
             }
             Instance = this;
             _eventsPublisher = new EventsPublisherEnums<T>(EventsPublisher.Instance);
-            RegisterKnownEvents();
+            _eventsPublisher.RegisterKnownEvents();
         }
 
         /// <summary>
@@ -59,14 +59,14 @@ namespace CrawfisSoftware.Events
         {
             _eventsPublisher.UnsubscribeToEvent(eventEnum, callback);
         }
-        private static void RegisterKnownEvents()
-        {
-            foreach (T eventEnum in Enum.GetValues(typeof(T)))
-            {
-                string eventName = eventEnum.ToString();
-                EventsPublisher.Instance.RegisterEvent(eventName);
-            }
-        }
+        //private static void RegisterKnownEvents()
+        //{
+        //    foreach (T eventEnum in Enum.GetValues(typeof(T)))
+        //    {
+        //        string eventName = eventEnum.ToString();
+        //        EventsPublisher.Instance.RegisterEvent(eventName);
+        //    }
+        //}
 
         public void SubscribeToAllEnumEvents(Action<string, object, object> callback)
         {

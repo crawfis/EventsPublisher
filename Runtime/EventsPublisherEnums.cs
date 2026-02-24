@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+
+using UnityEngine.UIElements;
 
 namespace CrawfisSoftware.Events
 {
@@ -13,6 +16,7 @@ namespace CrawfisSoftware.Events
     public class EventsPublisherEnums<T> where T : Enum
     {
         private IEventsPublisher<string> _eventsPublisher;
+        private Dictionary<T, string> _eventEnumToStringMap = new Dictionary<T, string>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="EventsPublisherEnums"/> class with the specified events
@@ -24,6 +28,12 @@ namespace CrawfisSoftware.Events
         public EventsPublisherEnums(IEventsPublisher<string> eventsPublisher)
         {
             _eventsPublisher = eventsPublisher;
+            var enumType = typeof(T);
+            string enumName = enumType.Name;
+            foreach (T eventEnum in Enum.GetValues(typeof(T)))
+            {
+                _eventEnumToStringMap[eventEnum] = enumName + "/" + eventEnum.ToString();
+            }
         }
 
         /// <summary>
@@ -36,7 +46,8 @@ namespace CrawfisSoftware.Events
         /// <param name="data">The data associated with the event. This can be any object containing information relevant to the event.</param>
         public void PublishEvent(T eventEnum, object sender, object data)
         {
-            _eventsPublisher.PublishEvent(eventEnum.ToString(), sender, data);
+            string eventName = _eventEnumToStringMap[eventEnum];
+            _eventsPublisher.PublishEvent(eventName, sender, data);
         }
 
         /// <summary>
@@ -51,7 +62,8 @@ namespace CrawfisSoftware.Events
         /// an <see cref="object"/>.</param>
         public void SubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            _eventsPublisher.SubscribeToEvent(eventEnum.ToString(), callback);
+            string eventName = _eventEnumToStringMap[eventEnum];
+            _eventsPublisher.SubscribeToEvent(eventName, callback);
         }
 
         /// <summary>
@@ -64,7 +76,16 @@ namespace CrawfisSoftware.Events
         /// the event is triggered.</param>
         public void UnsubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            _eventsPublisher.UnsubscribeToEvent(eventEnum.ToString(), callback);
+            string eventName = _eventEnumToStringMap[eventEnum];
+            _eventsPublisher.UnsubscribeToEvent(eventName, callback);
+        }
+
+        internal void RegisterKnownEvents()
+        {
+            foreach(string eventName in _eventEnumToStringMap.Values)
+            {
+                EventsPublisher.Instance.RegisterEvent(eventName);
+            }
         }
     }
 }
