@@ -1,11 +1,4 @@
-using CrawfisSoftware.Events;
-
-using System.Diagnostics;
-using System.Security.Policy;
-
 using UnityEditor;
-
-using UnityEngine;
 
 namespace CrawfisSoftware.Events.Editor
 {

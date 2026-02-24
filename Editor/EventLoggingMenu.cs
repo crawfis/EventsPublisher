@@ -1,6 +1,4 @@
-﻿using CrawfisSoftware.Events;
-
-using UnityEditor;
+﻿using UnityEditor;
 
 using UnityEngine;
 
@@ -65,7 +63,7 @@ namespace CrawfisSoftware.Events.Editor
 
         private static void OnEvent(string eventName, object sender, object data)
         {
-            Debug.Log($"<color=cyan>[{eventName}]</color> published by: {sender?.ToString()}\nData: {data}");
+            Debug.Log($"<color=cyan>[{eventName}]</color> published by: {sender?.ToString()} with Data: {data}");
         }
     }
 }

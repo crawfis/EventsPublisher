@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 
-using UnityEngine.UIElements;
-
 namespace CrawfisSoftware.Events
 {
     /// <summary>
@@ -15,11 +13,11 @@ namespace CrawfisSoftware.Events
     /// <typeparam name="T">The enumeration type used to identify events. Must be a type derived from <see cref="System.Enum"/>.</typeparam>
     public class EventsPublisherEnums<T> where T : Enum
     {
-        private IEventsPublisher<string> _eventsPublisher;
-        private Dictionary<T, string> _eventEnumToStringMap = new Dictionary<T, string>();
+        private readonly IEventsPublisher<string> _eventsPublisher;
+        private readonly Dictionary<T, string> _eventEnumToStringMap = new Dictionary<T, string>();
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="EventsPublisherEnums"/> class with the specified events
+        /// Initializes a new instance of the <see cref="EventsPublisherEnums"/> class with the specified events Enum/EnumName
         /// publisher.
         /// </summary>
         /// <remarks>This constructor allows dependency injection of an <see cref="IEventsPublisher{T}"/>

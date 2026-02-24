@@ -72,8 +72,8 @@ namespace CrawfisSoftware.Events
         {
             foreach (T eventEnum in Enum.GetValues(typeof(T)))
             {
-                string eventName = eventEnum.ToString();
-                EventsPublisher.Instance.SubscribeToEvent(eventName, callback);
+                //string eventName = eventEnum.ToString();
+                Instance.SubscribeToEvent(eventEnum, callback);
             }
         }
 
@@ -81,8 +81,8 @@ namespace CrawfisSoftware.Events
         {
             foreach (T eventEnum in Enum.GetValues(typeof(T)))
             {
-                string eventName = eventEnum.ToString();
-                EventsPublisher.Instance.UnsubscribeToEvent(eventName, callback);
+                //string eventName = eventEnum.ToString();
+                Instance.UnsubscribeToEvent(eventEnum, callback);
             }
         }
     }
