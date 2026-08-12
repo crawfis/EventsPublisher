@@ -17,10 +17,6 @@ namespace CrawfisSoftware.Events
         private readonly Dictionary<T, string> _eventEnumToStringMap = new Dictionary<T, string>();
         private readonly Dictionary<string, T> _eventStringToEnumMap = new Dictionary<string, T>();
 
-        // Which enum type has already claimed a given "TypeName/" prefix. Two enum types with the same
-        // simple name (in different namespaces) project onto the same event names and would collide.
-        private static readonly Dictionary<string, Type> _claimedPrefixes = new Dictionary<string, Type>();
-
         /// <summary>
         /// Initializes a new instance of the <see cref="EventsPublisherEnums"/> class with the specified events Enum/EnumName
         /// publisher.
@@ -33,33 +29,13 @@ namespace CrawfisSoftware.Events
             _eventsPublisher = eventsPublisher;
             var enumType = typeof(T);
             string enumName = enumType.Name;
-            WarnOnPrefixCollision(enumName, enumType);
+            EventsRegistry.ClaimPrefix(enumName, enumType);
             foreach (T eventEnum in Enum.GetValues(typeof(T)))
             {
                 string eventName = enumName + "/" + eventEnum.ToString();
                 _eventEnumToStringMap[eventEnum] = eventName;
                 _eventStringToEnumMap[eventName] = eventEnum;
             }
-        }
-
-        /// <summary>
-        /// Reports two enum types whose simple names collide. Event names are projected from
-        /// <see cref="Type.Name"/>, not <see cref="Type.FullName"/>, so two same-named enums in different
-        /// namespaces would silently share every event.
-        /// </summary>
-        private static void WarnOnPrefixCollision(string enumName, Type enumType)
-        {
-            if (_claimedPrefixes.TryGetValue(enumName, out Type existing))
-            {
-                if (existing != enumType)
-                {
-                    UnityEngine.Debug.LogError(
-                        $"EventsPublisherEnums: '{enumType.FullName}' and '{existing.FullName}' both project onto the " +
-                        $"event name prefix '{enumName}/'. Their events will collide. Rename one of the enum types.");
-                }
-                return;
-            }
-            _claimedPrefixes[enumName] = enumType;
         }
 
         /// <summary>
@@ -135,9 +111,11 @@ namespace CrawfisSoftware.Events
 
         internal void RegisterKnownEvents()
         {
-            foreach(string eventName in _eventEnumToStringMap.Values)
+            // Registers with the publisher this instance was constructed against, rather than reaching
+            // for EventsPublisher.Instance, so an injected publisher is honoured.
+            foreach (string eventName in _eventEnumToStringMap.Values)
             {
-                EventsPublisher.Instance.RegisterEvent(eventName);
+                _eventsPublisher.RegisterEvent(eventName);
             }
         }
     }

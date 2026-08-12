@@ -340,7 +340,44 @@ The pull path is a drop-in replacement for the `bool` check, except that it retu
 retires the mirror; `TryGetLast` is required rather than optional given the
 end-of-frame decision.
 
-### Independently: make the enum facades static
+### Implemented: `EventsFor<T>`
+
+Shipped. `EventsFor<T>` is a static, lazily-initialized facade; `EventsPublisherEnums<T>`
+remains the implementation and `EventsPublisherEnumsSingleton<T>` now forwards to
+`EventsFor<T>`, so the two paths share one facade and cannot disagree. Existing scene
+objects keep working unchanged.
+
+Lazy static initialization is *inherently* race-free for the facade's own events: any
+publish or subscribe goes through `EventsFor<T>`, which registers every member of `T`
+on first touch, so registration always precedes first use. No execution-order
+attribute and no scene object are involved.
+
+The one case it does not cover is an event name reaching the publisher as a raw
+string without the facade ever being touched — the Inspector-authored call sites.
+`[EventEnum]` marks an enum for registration at `BeforeSceneLoad`, which closes that
+gap until those call sites move to `EventRef`.
+
+Two supporting pieces:
+
+- **`EventsRegistry`** — non-generic, because a static field declared inside a generic
+  type exists once per *constructed* type. It owns the cross-family prefix registry
+  and the `SubsystemRegistration` reset.
+- **Static reset** — `SubsystemRegistration` runs before `BeforeSceneLoad` and drops
+  cached facades and prefix claims. A no-op when domain reload is enabled (the current
+  setting), correct when it is not. It deliberately does **not** clear
+  `EventsPublisher` itself; dropping live subscriptions stays the opt-in editor toggle.
+
+#### Defect found and fixed in the Stage 0 collision detector
+
+The detector shipped in Stage 0 **never fired**. `_claimedPrefixes` was a static field
+inside the generic `EventsPublisherEnums<T>`, so `EventsPublisherEnums<A>` and
+`EventsPublisherEnums<B>` each had their own dictionary containing only their own
+prefix — exactly the cross-type comparison the check exists to make was the one it
+could not see. Confirmed by constructing facades for two same-named enums in different
+namespaces and observing no error. The registry now lives on the non-generic
+`EventsRegistry` and the cross-family case is covered by a test.
+
+### Rationale: why the enum facades are static
 
 `EventsPublisherEnumsSingleton<T> : MonoBehaviour` requires a GameObject in a scene,
 and that requirement is itself the source of the `[DefaultExecutionOrder(-10000)]`
@@ -351,10 +388,8 @@ A static, lazily-initialized `EventsFor<T>` removes the `Awake` race entirely, n
 no execution-order attribute, and makes `EventsPublisherGameFlow`,
 `EventsPublisherUGS`, `EventsRegistration` and `GuiEventsPublisher` unnecessary.
 
-This is the single highest-value fix for the timing problem and is **independent of
-sticky events** — worth doing either way. It requires care around Unity's domain
-reload settings (`[RuntimeInitializeOnLoadMethod]` / `[InitializeOnEnterPlayMode]`)
-when *Enter Play Mode Options* has domain reload disabled.
+This was the single highest-value fix for the timing problem and is **independent of
+sticky events**. See *Implemented: `EventsFor<T>`* above.
 
 ---
 
