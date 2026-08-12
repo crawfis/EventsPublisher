@@ -306,40 +306,74 @@ value lives in the publisher frame it was published into, and `Pop()` discards i
 `Clear()` must drop sticky state too, and `ClearEventsMenu`'s existing
 "clear on exiting play mode" toggle already covers the editor loop.
 
-### Replay timing — DECIDED: end of frame, paired with a synchronous pull
+### Replay timing — DECIDED: immediate, on subscribe
 
-Sticky replay is deferred to **end of frame** rather than fired inline during
-`SubscribeToEvent`. Inline replay would run a handler mid-`Awake`, before `Start` and
-possibly before other scene objects exist; end-of-frame avoids that re-entrancy
-entirely.
+Sticky replay fires **inline during `Subscribe`**, routed through the existing
+callback queue.
 
-This choice has a consequence that must be handled, or sticky will not actually
-retire the `bool` mirror. Today's pattern reads state **synchronously**:
+#### Reversal of an earlier decision
 
-```csharp
-if (UGS_State.IsCheckForExistingSession) // Missed the event being published.
-```
+This ADR previously recorded end-of-frame replay, paired with a mandatory
+`TryGetLast` pull so that `Awake`/`Start` readers were not regressed. That decision
+was mine, it was presented as the "safer" option, and the reasoning was weaker than
+the presentation implied. It is reversed here.
 
-With end-of-frame replay, a component subscribing in `Awake` is not invoked until the
-end of that frame — so the value is still unavailable in `Start`. End-of-frame is
-strictly *later* than what the `bool` provides now, and on its own is a regression for
-this call site.
+The tell is structural: **end-of-frame creates the gap that `TryGetLast` then
+patches.** A choice that requires a second mechanism to compensate for it is not
+carrying its weight. Weighing the two honestly:
 
-Sticky is therefore paired with a synchronous pull alongside the push:
+- **End-of-frame buys:** the handler does not run mid-`Awake`.
+- **End-of-frame costs:** between `Awake` and end of frame, the subscriber has
+  subscribed but has not been told the current state. It is wrong about the world for
+  the rest of the frame, with no recourse — except to call `TryGetLast`
+  synchronously, in `Awake`.
+
+That last point dissolves the original argument. If reading the value synchronously
+during `Awake` were genuinely hazardous, `TryGetLast` in `Awake` would be equally
+hazardous. It is not, so the objection to immediate replay does not hold.
+
+#### The remaining objection is under the subscriber's control
+
+"The handler might run before the subscriber is fully constructed" is real, but
+immediate replay fires *exactly when `Subscribe` is called* — a moment the subscriber
+already chooses. Subscribing at the end of `Awake`, in `OnEnable`, or in `Start` is
+sufficient.
+
+That is local, visible discipline in one file, in exchange for the invisible global
+constraint (`[DefaultExecutionOrder]`, scene load order) that this work exists to
+remove. Trading a global invisible constraint for a local visible one is the right
+direction.
+
+#### Accepted costs
+
+1. **Re-entrancy into the drain.** `Subscribe` called from inside a handler — during
+   an active publish drain — must not invoke a callback mid-drain. The replay is
+   routed through the same `_callbackQueue`: if a drain is in progress it enqueues and
+   runs in order, otherwise it invokes immediately. The `_isDraining` guard added in
+   Stage 0 is the hook. **This is the part that needs care in implementation.**
+2. **Structural work in a handler.** A handler that loads or unloads scenes during the
+   `Awake` of a still-loading scene is dicey in Unity. Such a subscriber defers itself
+   (`StartCoroutine`, or a flag acted on in `Update`) — and would face the same
+   problem via `TryGetLast`.
+3. **Staggered delivery.** Subscribers see a replayed event at different times
+   depending on when each subscribes. Inherent to replay in any form, end-of-frame
+   included.
+
+#### `TryGetLast` is retained, but demoted
 
 ```csharp
 bool TryGetLast(string eventName, out object sender, out object data);
 ```
 
-- **Push** (end-of-frame replay) — the normal reactive path, no handler running
-  mid-`Awake`.
-- **Pull** (`TryGetLast`) — for code that genuinely needs the value during
-  `Awake`/`Start`.
+It is no longer required as compensation. It remains useful for code that wants the
+value **without subscribing at all** — a one-shot read, a non-`MonoBehaviour`, an
+editor tool. It still returns the payload, which the `bool` mirror never could.
 
-The pull path is a drop-in replacement for the `bool` check, except that it returns
-**the payload**, which a `bool` never could. The push/pull pair together is what
-retires the mirror; `TryGetLast` is required rather than optional given the
-end-of-frame decision.
+#### Rejected: a per-subscription override
+
+`Subscribe(e, cb, Immediate | Deferred)` was considered and rejected. One default,
+and a subscriber needing deferral does it itself in a line. Adding the knob before
+anything needs it moves the decision to every call site.
 
 ### Implemented: `EventsFor<T>`
 
@@ -479,7 +513,10 @@ Not fixed here; they are not identity or timing problems.
    enum families. First declaration wins, conflicts are an error, implicit
    registration is removed from `SubscribeToEvent`. See *Declaring the policy*.
 2. **Sticky replay timing** — end of frame, paired with a synchronous
-   `TryGetLast` pull so `Awake`/`Start` code is not regressed. See *Replay timing*.
+   `TryGetLast` pull so `Awake`/`Start` code is not regressed.
+   **Superseded** — replay is immediate, on subscribe, routed through the existing
+   callback queue; `TryGetLast` is retained but demoted from required to convenience.
+   See *Replay timing* for the reversal and its reasoning.
 3. **Edge→level migration** — model levels directly; do not ship invalidation pairs.
    Edges are retained as `Transient` alongside the new `Sticky` levels. See
    *Edge vs. level*.
@@ -558,7 +595,7 @@ A sticky event has three possible states, and publishing only reaches two of the
 | State | Late subscriber sees |
 |---|---|
 | Never published | not invoked |
-| Has a retained value | the value, at end of frame |
+| Has a retained value | the value, immediately on subscribe |
 | **Had a value, now untrue** | **the stale value** |
 
 The third state is the gap. The distinction is *value changed* versus *value became
