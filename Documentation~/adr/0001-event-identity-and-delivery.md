@@ -533,6 +533,21 @@ builds side by side. Claims below distinguish *fixed live defect* from *hardenin
 No public API was removed or changed; all additions are additive, so 2.3.1
 consumers continue to compile.
 
+### Tests
+
+`Tests/Editor` holds 31 EditMode tests across three fixtures, covering dispatch ordering
+and isolation, the static facade and its registration timing, and all three delivery
+policies. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
+test can reset `EventsRegistry`'s static state — a public reset would be a footgun in
+game code.
+
+The suite was mutation-checked rather than merely observed green: retaining on every
+frame instead of the top one, firing sticky replay inline instead of through the queue,
+and dropping the null-name guard each fail exactly the test written for that behaviour.
+
+Consumers must add the package to `testables` in `Packages/manifest.json` for Unity to
+build them.
+
 ### Not addressed
 
 Stages 1–3 and Decision 2 are design only. No delivery policy is implemented.

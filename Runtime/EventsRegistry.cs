@@ -130,7 +130,7 @@ namespace CrawfisSoftware.Events
         /// "Clear Events on Exiting Play Mode" toggle, and is not silently taken here.</para>
         /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetStaticState()
+        internal static void ResetStaticState()
         {
             for (int i = 0; i < _resetHandlers.Count; i++)
             {
@@ -148,7 +148,7 @@ namespace CrawfisSoftware.Events
         /// <remarks>See <see cref="EventEnumAttribute"/> for why this exists when
         /// <see cref="EventsFor{T}"/> already registers lazily on first use.</remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void RegisterAnnotatedEventEnums()
+        internal static void RegisterAnnotatedEventEnums()
         {
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
