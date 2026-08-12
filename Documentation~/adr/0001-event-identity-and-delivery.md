@@ -1,6 +1,6 @@
 # ADR 0001 — Event Identity and Delivery Timing
 
-**Status:** Proposed
+**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 design agreed, unimplemented.
 **Date:** 2026-08-12
 **Applies to:** `com.crawfissoftware.eventspublisher` 2.3.1 and consumers
 (`EventsPublishingTesting`, `RunnerUGSTemplate`)
@@ -136,8 +136,10 @@ Stage 0 lands, whereas a wrong payload cast fails inside a handler.
   collision hole (two enums with the same simple name in different namespaces), but
   the projected names are serialized into `.unity` and `.prefab` assets. Changing
   the scheme would silently break every baked reference — the exact rename hazard
-  this ADR argues against. Stage 0 ships a collision *detector* instead. Revisit
-  alongside a scene-asset migration.
+  this ADR argues against. Stage 0 ships a collision *detector* instead.
+  **Reopened** — see Open Question 1. This rejection rests entirely on the baked
+  strings; if the scene objects move onto enums, `FullName` becomes viable and the
+  collision detector can be retired.
 - **Message-type-as-identity** (`readonly record struct GameStarted(int Score)`,
   MediatR/MessagePipe shape). The idiomatic C# endpoint: the CLR type is the
   identity, namespaces make collisions impossible, rename refactoring is safe, and
@@ -167,10 +169,49 @@ subscription *plus* an `Awake`-time poll of a hand-maintained `bool`, a subscrib
 just subscribes — and if the event already fired, it is invoked immediately **with
 the original payload**. One code path, no mirror to drift, no lost data.
 
-### Declaring the policy
+### Declaring the policy — DECIDED: hybrid, registered before any scene loads
 
-On the enum member, read once at facade construction where `EventsPublisherEnums<T>`
-already reflects over `Enum.GetValues`. Zero per-publish cost:
+Policy is declared through `RegisterEvent(name, policy)`, with an attribute sweep as
+the zero-timing default for enum families.
+
+The imperative form alone has three races, all silent:
+
+1. **Publish before register.** Nothing has declared `UnityServicesInitialized` as
+   `Sticky` yet, so the bus has no reason to retain it. The first publish — the one
+   that matters most during boot — is dropped. Precisely the case sticky exists for.
+2. **Subscribe before register.** `SubscribeToEvent` already calls `RegisterEvent`
+   internally, and `RegisterEvent` no-ops when the key exists. An early subscriber
+   therefore registers the event as `Transient`, and the later
+   `RegisterEvent(name, Sticky)` **silently does nothing**.
+3. **The publisher stack.** `RegisterEvent` goes to `Peek()`; `PublishEvent` visits
+   every frame. A `Push()` creates a frame that knows no policies.
+
+The resolution is not attribute-versus-imperative — it is getting registration off
+the `MonoBehaviour` lifecycle entirely.
+`[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]` runs
+after assemblies load and before the first scene's `Awake`, and therefore before
+every additively-loaded scene's `Awake` by definition. Races 1 and 2 disappear,
+because no user code can publish or subscribe before it.
+
+That constrains where the declaration can live: if registration must precede all user
+code, the policy must be knowable without running user code. An attribute is readable
+at type load and satisfies this for free; an imperative
+`Register(name, policy)` also satisfies it **provided the call site is a static
+initializer rather than an `Awake`**.
+
+Therefore:
+
+- **Enum families** — attribute on the member, swept at `BeforeSceneLoad`.
+  Zero timing, zero per-publish cost.
+- **`RegisterEvent(name, policy)`** — retained as the escape hatch for
+  runtime-computed names and any remaining Inspector-authored strings.
+- **Conflict rule** — first declaration wins; a differing later declaration is an
+  error, so an implicit registration cannot silently downgrade a declared policy.
+- **The policy registry is stack-global**, while the sticky *value cache* stays
+  per-frame so `Pop()` discards it. These are two different structures.
+- **Implicit registration is removed from `SubscribeToEvent`.** Once registration is
+  guaranteed at load, subscribing to an unregistered name is a typo rather than a
+  request to create one. This is the same change Stage 1 wants.
 
 ```csharp
 public enum UGS_EventsEnum
@@ -199,19 +240,62 @@ So the per-event judgement is: **is this an edge or a level?**
 - Levels (`GameplayReady`, `IsGameConfigured`, `RemoteConfigUpdated`,
   `DifficultyChanged`) → `Sticky`.
 
-Where a level is currently expressed as two opposing edges — `PlayerSignedIn` /
-`PlayerSignedOut`, `MainMenuShown` / `MainMenuHidden` — sticky alone is unsafe: a
-late subscriber after sign-out would still receive a stale "signed in". Two options,
-in order of preference:
+Where a level is currently expressed as two opposing edges — `GameplayReady` /
+`GameplayNotReady`, `PlayerSignedIn` / `PlayerSignedOut` — sticky alone is unsafe: a
+late subscriber after sign-out would still receive a stale "signed in".
 
-1. **Model the level directly**, carrying the value:
-   `AuthStateChanged(bool signedIn)`, `MainMenuVisibilityChanged(bool visible)`.
-   Sticky is then unambiguously correct, and the `bool` mirror is fully replaced.
-2. **Declare an invalidation pair** — `PlayerSignedOut` clears the sticky value of
-   `PlayerSignedIn`. Preserves the existing enums but keeps the two-edges-one-level
-   coupling that caused the drift.
+**DECIDED: model the level directly** (option 1 below), rather than declaring
+invalidation pairs (option 2), which would preserve the existing enums but keep the
+two-edges-one-level coupling that caused the drift in the first place.
 
-Option 1 is the real fix. Option 2 is the migration aid.
+#### What "model the level directly" means
+
+Make one event carry the state value, instead of two events announcing transitions
+into it:
+
+```csharp
+// Edge pair — needs history to interpret
+GameplayReady
+GameplayNotReady
+
+// Level — self-describing
+GameplayReadyChanged        // data: bool
+```
+
+The property that matters: **a level event is self-describing and idempotent.**
+Received once, late, with no history, it tells the whole truth — which is exactly
+what makes sticky replay safe. Replaying an *edge* is actively wrong: a late
+subscriber would get `GameplayReady` even though `GameplayNotReady` fired afterwards.
+
+| Current edge pair | Level event | Payload |
+|---|---|---|
+| `GameplayReady` / `GameplayNotReady` | `GameplayReadyChanged` | `bool` |
+| `PlayerSignedIn` / `PlayerSignedOut` | `AuthStateChanged` | `AuthState` enum |
+| `MainMenuShowing` / `MainMenuHidden` | `MainMenuVisibilityChanged` | `bool` |
+| `Paused` / `Resumed` | `PauseStateChanged` | `bool` |
+| `GameStarted` / `GameEnding` | `GameSessionStateChanged` | `{ NotStarted, Running, Ended }` |
+
+Several events are **already levels**: `RemoteConfigUpdated` carries the config,
+`DifficultyChanged` carries the difficulty, `GameConfigApplied` carries the config.
+These work with sticky unchanged. The tell is that they already carry a payload — an
+event that needs a payload to be useful is usually a level.
+
+Prefer an enum over `bool` wherever "not yet" is meaningful, since a never-published
+sticky event simply does not invoke the subscriber at all.
+
+#### The edges are not deleted
+
+This is additive, not a rewrite. Edges remain useful — `MainMenuHiding` is a real cue
+to start a fade, and animation, SFX and analytics all want the moment rather than the
+state. Both are kept, with different policies:
+
+- **Edges → `Transient`.** Anything reacting to the transition.
+- **Levels → `Sticky`.** Anything needing current state: late subscribers, UI
+  rebuilding itself, guards.
+
+Migration is therefore incremental: add the level event alongside the existing edges,
+publish it wherever the edges are published, move the `bool` pollers onto it, delete
+the `bool`.
 
 ### Reset scope
 
@@ -221,14 +305,40 @@ value lives in the publisher frame it was published into, and `Pop()` discards i
 `Clear()` must drop sticky state too, and `ClearEventsMenu`'s existing
 "clear on exiting play mode" toggle already covers the editor loop.
 
-### Replay re-entrancy
+### Replay timing — DECIDED: end of frame, paired with a synchronous pull
 
-A sticky replay fires during `SubscribeToEvent`, i.e. typically inside `Awake` —
-before `Start`, and possibly before other scene objects exist. This matches the
-timing of today's `Awake`-time poll, so it is consistent with existing behavior, but
-it must be documented: **a handler for a sticky event must tolerate being invoked
-during subscription.** Deferring replay to end-of-frame is the alternative; it is
-safer but changes ordering relative to the current poll and can itself be missed.
+Sticky replay is deferred to **end of frame** rather than fired inline during
+`SubscribeToEvent`. Inline replay would run a handler mid-`Awake`, before `Start` and
+possibly before other scene objects exist; end-of-frame avoids that re-entrancy
+entirely.
+
+This choice has a consequence that must be handled, or sticky will not actually
+retire the `bool` mirror. Today's pattern reads state **synchronously**:
+
+```csharp
+if (UGS_State.IsCheckForExistingSession) // Missed the event being published.
+```
+
+With end-of-frame replay, a component subscribing in `Awake` is not invoked until the
+end of that frame — so the value is still unavailable in `Start`. End-of-frame is
+strictly *later* than what the `bool` provides now, and on its own is a regression for
+this call site.
+
+Sticky is therefore paired with a synchronous pull alongside the push:
+
+```csharp
+bool TryGetLast(string eventName, out object sender, out object data);
+```
+
+- **Push** (end-of-frame replay) — the normal reactive path, no handler running
+  mid-`Awake`.
+- **Pull** (`TryGetLast`) — for code that genuinely needs the value during
+  `Awake`/`Start`.
+
+The pull path is a drop-in replacement for the `bool` check, except that it returns
+**the payload**, which a `bool` never could. The push/pull pair together is what
+retires the mirror; `TryGetLast` is required rather than optional given the
+end-of-frame decision.
 
 ### Independently: make the enum facades static
 
@@ -326,20 +436,45 @@ Not fixed here; they are not identity or timing problems.
 
 ---
 
+## Decisions taken
+
+1. **Delivery policy declaration** — hybrid. `RegisterEvent(name, policy)` is the
+   mechanism; an attribute sweep at `BeforeSceneLoad` is the zero-timing default for
+   enum families. First declaration wins, conflicts are an error, implicit
+   registration is removed from `SubscribeToEvent`. See *Declaring the policy*.
+2. **Sticky replay timing** — end of frame, paired with a synchronous
+   `TryGetLast` pull so `Awake`/`Start` code is not regressed. See *Replay timing*.
+3. **Edge→level migration** — model levels directly; do not ship invalidation pairs.
+   Edges are retained as `Transient` alongside the new `Sticky` levels. See
+   *Edge vs. level*.
+4. **Domain reload** — `RunnerUGSTemplate/ProjectSettings/EditorSettings.asset` has
+   `m_EnterPlayModeOptionsEnabled: 1` with `m_EnterPlayModeOptions: 0`, i.e. the
+   fast-enter feature is on but neither domain nor scene reload is actually disabled.
+   Statics therefore still reset on entering play mode today, so a static registry is
+   currently safe. The project is one checkbox away from statics persisting, so the
+   registry resets explicitly rather than relying on that.
+
 ## Open questions
 
-1. **Delivery policy declaration** — attribute on the enum member, or an explicit
-   `RegisterEvent(name, policy)` overload? The attribute keeps the policy next to
-   the event; the overload allows runtime decisions and works for the
-   Inspector-authored string call sites.
-2. **Sticky replay timing** — immediate (consistent with today's `Awake` poll) or
-   end-of-frame (safer, but changes ordering)?
-3. **Edge→level migration** — model levels directly (Option 1) or ship invalidation
-   pairs (Option 2) to preserve the existing enums?
-4. **Inspector call sites** — these are what block Stage 1. A typed drop-down
-   (a `[EventName]` property drawer populated from `GetRegisteredEvents`, or
-   `ScriptableObject` channels) would fix them, but the existing baked strings in
-   `.unity`/`.prefab` need a migration path.
-5. **Static facade rollout** — does `RunnerUGSTemplate` run with domain reload
-   disabled? That determines how much static-state reset plumbing `EventsFor<T>`
-   needs.
+1. **Inspector call sites.** These block Stage 1. The owner expects to be able to
+   move the scene-object strings onto enums without much difficulty; if so, three
+   consequences follow and should be confirmed before starting:
+   - Stage 1 (making the `string` API `internal`) becomes viable.
+   - The `Type.FullName` rejection above is **reopened** — that rejection rests
+     entirely on names being baked into `.unity`/`.prefab` assets. Remove the baked
+     strings and switching to `FullName` closes the namespace-collision hole for
+     free, at which point the Stage 0 collision detector can be retired.
+   - Beware the cross product. Unity cannot serialize `System.Enum` polymorphically,
+     so a per-family concrete subclass is needed for each generic component — eight
+     string-using components across four enum families is up to 32 classes if done
+     naively. A serializable `EventRef` (enum type name + member name, with a
+     two-dropdown property drawer) keeps one component per behavior, avoids typos,
+     and projects to the same event name. That is the same "string is a projection,
+     not the identity" principle applied to serialized data, and is likely the
+     better fit for Inspector fields specifically.
+2. **`Replay` policy** — is the full-journal variant wanted at all, or is
+   `Transient` + `Sticky` sufficient? `EventHistory` is the only obvious consumer,
+   and it already subscribes to all events.
+3. **Sticky reset granularity** — `Pop()` and `Clear()` are settled. Is a
+   per-event `Invalidate(name)` also needed for cases where a level becomes unknown
+   rather than changing value?
