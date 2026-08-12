@@ -3,6 +3,7 @@
     "rootNamespace": "CrawfisSoftware.Events.Tests",
     "references": [
         "CrawfisSoftware.EventsPublisher",
+        "CrawfisSoftware.EventsPublisher.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

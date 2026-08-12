@@ -66,6 +66,26 @@ is registered by that first touch.
 A `Replay` journal grows for as long as its publisher frame lives. Scope it by pushing a
 publisher frame when the owning scene loads and popping it on unload.
 
+## Authoring event names in the Inspector
+
+Scene data has no compile step, so a plain `[SerializeField] string` event name has no check
+of any kind. Two ways to get a dropdown of real events instead:
+
+```csharp
+[EventName] [SerializeField] private string _eventToFire;   // existing fields
+[SerializeField] private EventRef _eventToFire;             // new fields
+```
+
+Prefer `[EventName]` when converting an existing field. Changing a field's type changes its
+serialized shape, so Unity cannot carry the old value across and every name already baked into
+a `.unity` or `.prefab` asset would be lost. The attribute leaves the field a string, so
+existing values keep working and only the authoring experience changes.
+
+The dropdown lists every member of every enum marked `[EventEnum]`, grouped by family. A value
+that matches no known event is shown as `Missing/<value>` rather than silently cleared, so a
+name whose enum is not yet marked — or that has since been renamed — is surfaced instead of
+being replaced the moment the Inspector paints it.
+
 ## Diagnostics
 
 `EventsPublisher.StrictMode` — on by default in the editor and development builds —
