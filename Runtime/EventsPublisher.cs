@@ -62,7 +62,18 @@ namespace CrawfisSoftware.Events
         public void PublishEvent(string eventName, object sender, object data)
         {
             if (StrictMode) WarnIfUnregistered(eventName, sender);
-            foreach (IEventsPublisher<string> publisher in _eventsPublishers) { publisher.PublishEvent(eventName, sender, data); }
+
+            // Dispatch to every frame so subscribers underneath still hear it, but retain only on the
+            // frame that is top at publish time. A Stack<T> enumerates top-down, so the first is Peek().
+            bool isTopFrame = true;
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers)
+            {
+                if (publisher is EventsPublisherInternal internalPublisher)
+                    internalPublisher.PublishEvent(eventName, sender, data, isTopFrame);
+                else
+                    publisher.PublishEvent(eventName, sender, data);
+                isTopFrame = false;
+            }
         }
 
         /// <summary>
@@ -90,6 +101,39 @@ namespace CrawfisSoftware.Events
         public void RegisterEvent(string eventName)
         {
             _eventsPublishers.Peek().RegisterEvent(eventName);
+        }
+
+        /// <summary>
+        /// Registers an event and declares its <see cref="EventDelivery"/> policy.
+        /// </summary>
+        /// <remarks>
+        /// <para>The escape hatch for names that no enum can annotate — runtime-computed names, and
+        /// Inspector-authored strings. For an enum family, prefer
+        /// <see cref="EventDeliveryAttribute"/> on the member, which is read before any scene loads and
+        /// keeps the policy next to the event.</para>
+        /// <para>Call this from a static initializer rather than from <c>Awake</c>. The policy must be
+        /// declared before the event is first published, or the first publish — often the one that
+        /// matters most during boot — is not retained.</para>
+        /// <para>First explicit declaration wins; a second, differing one is reported and ignored.</para>
+        /// </remarks>
+        public void RegisterEvent(string eventName, EventDelivery delivery)
+        {
+            EventsRegistry.DeclarePolicy(eventName, delivery);
+            RegisterEvent(eventName);
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>Searches the stack from the top down and returns the first frame holding a
+        /// retained value.</remarks>
+        public bool TryGetLast(string eventName, out object sender, out object data)
+        {
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers)
+            {
+                if (publisher.TryGetLast(eventName, out sender, out data)) return true;
+            }
+            sender = null;
+            data = null;
+            return false;
         }
 
         /// <inheritdoc/>

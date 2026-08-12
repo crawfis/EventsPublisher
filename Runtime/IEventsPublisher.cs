@@ -37,6 +37,31 @@ namespace CrawfisSoftware.Events
         void RegisterEvent(T eventName);
 
         /// <summary>
+        /// Registers an event and declares its <see cref="EventDelivery"/> policy.
+        /// </summary>
+        /// <remarks>The escape hatch for names no enum can annotate — runtime-computed names and
+        /// Inspector-authored strings. For an enum family, prefer <see cref="EventDeliveryAttribute"/>
+        /// on the member. Declare from a static initializer rather than <c>Awake</c>: the policy must
+        /// be in place before the event is first published, or that first publish is not retained.
+        /// First declaration wins; a differing second one is reported and ignored.</remarks>
+        void RegisterEvent(T eventName, EventDelivery delivery);
+
+        /// <summary>
+        /// Retrieves the most recently retained value for an event, without subscribing to it.
+        /// </summary>
+        /// <remarks>Only events declared <see cref="EventDelivery.Sticky"/> or
+        /// <see cref="EventDelivery.Replay"/> retain anything; a
+        /// <see cref="EventDelivery.Transient"/> event always reports <see langword="false"/>. Use this
+        /// for code that wants the current value but has no reason to subscribe — a one-shot read, a
+        /// non-<c>MonoBehaviour</c>, an editor tool. Subscribers do not need it: a subscription to a
+        /// retaining event is delivered the retained value immediately.</remarks>
+        /// <param name="eventName">The event to query.</param>
+        /// <param name="sender">The sender recorded with the retained value, or <see langword="null"/>.</param>
+        /// <param name="data">The data recorded with the retained value, or <see langword="null"/>.</param>
+        /// <returns><see langword="true"/> if a value was retained.</returns>
+        bool TryGetLast(T eventName, out object sender, out object data);
+
+        /// <summary>
         /// Subscribes to all events and invokes the specified callback when an event occurs.
         /// </summary>
         /// <remarks>The callback is invoked for every event without filtering. Ensure the callback

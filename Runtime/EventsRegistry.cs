@@ -23,6 +23,65 @@ namespace CrawfisSoftware.Events
         // Reset callbacks published by each EventsFor<T> that has been initialized.
         private static readonly List<Action> _resetHandlers = new List<Action>();
 
+        // Delivery policy per event name. Deliberately stack-global: RegisterEvent reaches only the top
+        // publisher frame, but PublishEvent visits every frame, so a per-frame policy would mean a
+        // pushed frame knew nothing about how to treat the events published into it. The retained
+        // values themselves stay per-frame, so Pop() still discards them.
+        private static readonly Dictionary<string, EventDelivery> _policies = new Dictionary<string, EventDelivery>();
+
+        /// <summary>
+        /// Number of retained entries after which a <see cref="EventDelivery.Replay"/> journal is
+        /// reported as growing without bound. Reported, never truncated — a silent cap would read as
+        /// "everything was replayed" when it was not.
+        /// </summary>
+        public const int JournalWarningThreshold = 1000;
+
+        /// <summary>
+        /// Declares the delivery policy for an event name.
+        /// </summary>
+        /// <remarks>
+        /// <para>First declaration wins; a second, differing one is reported and ignored.</para>
+        /// <para>Only an outright declaration — an <see cref="EventDeliveryAttribute"/> or the
+        /// <c>RegisterEvent(name, delivery)</c> overload — records anything here. Registering a name
+        /// without a policy, as <c>SubscribeToEvent</c> does on the fly, records nothing and leaves
+        /// <see cref="GetPolicy"/> falling through to its <see cref="EventDelivery.Transient"/>
+        /// default. That is what stops an early subscriber from pinning an event to Transient and
+        /// silently turning a later <c>[EventDelivery(Sticky)]</c> into a no-op.</para>
+        /// <para>Note this makes a declaration ordering-sensitive against publishes, not against
+        /// subscribes: a policy declared <em>after</em> an event has already been published does not
+        /// retroactively retain the value that was published under the old policy.</para>
+        /// </remarks>
+        /// <param name="eventName">The projected event name.</param>
+        /// <param name="delivery">The policy to apply.</param>
+        internal static void DeclarePolicy(string eventName, EventDelivery delivery)
+        {
+            if (string.IsNullOrEmpty(eventName)) return;
+
+            if (!_policies.TryGetValue(eventName, out EventDelivery existing))
+            {
+                _policies[eventName] = delivery;
+                return;
+            }
+
+            if (existing != delivery)
+            {
+                Debug.LogError(
+                    $"EventsRegistry: '{eventName}' is already declared as {existing} and cannot be " +
+                    $"redeclared as {delivery}. The first declaration is kept.");
+            }
+        }
+
+        /// <summary>
+        /// Gets the delivery policy for an event name, defaulting to
+        /// <see cref="EventDelivery.Transient"/>.
+        /// </summary>
+        public static EventDelivery GetPolicy(string eventName)
+        {
+            if (!string.IsNullOrEmpty(eventName) && _policies.TryGetValue(eventName, out EventDelivery policy))
+                return policy;
+            return EventDelivery.Transient;
+        }
+
         /// <summary>
         /// Records that <paramref name="enumType"/> projects onto <paramref name="prefix"/>, and reports
         /// a second enum type claiming the same one.
@@ -80,6 +139,7 @@ namespace CrawfisSoftware.Events
             }
             _resetHandlers.Clear();
             _claimedPrefixes.Clear();
+            _policies.Clear();
         }
 
         /// <summary>

@@ -80,6 +80,15 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
+        /// Retrieves the most recently retained value for <paramref name="eventEnum"/>, without
+        /// subscribing to it. See <see cref="EventsFor{T}.TryGetLast"/>.
+        /// </summary>
+        public bool TryGetLast(T eventEnum, out object sender, out object data)
+        {
+            return EventsFor<T>.TryGetLast(eventEnum, out sender, out data);
+        }
+
+        /// <summary>
         /// Gets the published event name for <paramref name="eventEnum"/>.
         /// </summary>
         public string GetEventName(T eventEnum)

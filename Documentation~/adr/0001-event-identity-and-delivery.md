@@ -1,7 +1,7 @@
 # ADR 0001 — Event Identity and Delivery Timing
 
-**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 fully specified;
-`EventsFor<T>` implemented, delivery policy not yet.
+**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 implemented
+(`EventsFor<T>`, `Transient`/`Sticky`/`Replay`, immediate replay, `TryGetLast`).
 **Date:** 2026-08-12
 **Applies to:** `com.crawfissoftware.eventspublisher` 2.3.1 and consumers
 (`EventsPublishingTesting`, `RunnerUGSTemplate`)
@@ -301,10 +301,28 @@ the `bool`.
 ### Reset scope
 
 A stale sticky value replaying into a fresh play session is a regression relative to
-today. The `IStackEventsPublisher` push/pop stack is the natural scope: a sticky
-value lives in the publisher frame it was published into, and `Pop()` discards it.
-`Clear()` must drop sticky state too, and `ClearEventsMenu`'s existing
+today. The `IStackEventsPublisher` push/pop stack is the natural scope: a retained
+value lives in the publisher frame that was top when it was published, and `Pop()`
+discards it. `Clear()` drops retained state too, and `ClearEventsMenu`'s existing
 "clear on exiting play mode" toggle already covers the editor loop.
+
+#### Correction: retention is top-frame only, not per-frame
+
+An earlier draft said a retained value "lives in the frame it was published into"
+without noticing that `EventsPublisher.PublishEvent` dispatches to **every** frame in
+the stack. Retaining wherever the event was dispatched would therefore have written
+the value into *all* frames — so `Pop()` would discard nothing, because a copy would
+still be sitting in the frames underneath. The scoping story this ADR relies on for
+`Replay` would not have worked at all.
+
+Caught by a test asserting that a value published before a `Push()` survives the
+matching `Pop()`; it returned the inner frame's value instead.
+
+Dispatch and retention are now separated: every frame is still dispatched to, so
+subscribers underneath continue to hear the event, but only the frame that is top at
+publish time retains it. `TryGetLast` on the stack searches top-down and returns the
+first frame holding a value. `Push`/`Pop` is consequently a real scope, which is what
+makes the `Replay` scoping guidance actionable.
 
 ### Replay timing — DECIDED: immediate, on subscribe
 
@@ -374,6 +392,32 @@ editor tool. It still returns the payload, which the `bool` mirror never could.
 `Subscribe(e, cb, Immediate | Deferred)` was considered and rejected. One default,
 and a subscriber needing deferral does it itself in a line. Adding the knob before
 anything needs it moves the decision to every call site.
+
+### Implemented: delivery policy
+
+Shipped. `EventDelivery` (`Transient`/`Sticky`/`Replay`) with
+`[EventDelivery(...)]` on enum members, read once at facade construction; the
+publisher then does a dictionary lookup per publish rather than any reflection.
+
+- **Policy registry is stack-global**, on `EventsRegistry`; retained values are
+  per-frame. `RegisterEvent(name, delivery)` on `IEventsPublisher<T>` is the escape
+  hatch for names no enum can annotate.
+- **First declaration wins**, a differing second one is reported. Registering a name
+  *without* a policy — as `SubscribeToEvent` does implicitly — records nothing, so an
+  early subscriber cannot pin an event to `Transient` and silently turn a later
+  `[EventDelivery(Sticky)]` into a no-op. This resolves race 2 structurally, so the
+  planned implicit/explicit upgrade mechanism was not needed and no longer appears.
+- **Replay is immediate**, routed through the shared callback queue. A `Subscribe`
+  made from inside a handler during an active drain enqueues and runs in order.
+- **`TryGetLast`** is enum-keyed on the facades, string-keyed on the publisher.
+- **Journal growth past `EventsRegistry.JournalWarningThreshold`** is reported, never
+  truncated.
+
+Removing implicit registration from `SubscribeToEvent`, listed under the policy
+decision, is **deferred to Stage 1**. Doing it now would break the Inspector-authored
+subscribe call sites in `RunnerUGSTemplate`, which cannot move to a typed control
+until `EventRef` exists. It is not needed for policy correctness given the point
+above.
 
 ### Implemented: `EventsFor<T>`
 

@@ -105,6 +105,19 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
+        /// Retrieves the most recently retained value for <paramref name="eventEnum"/>, without
+        /// subscribing to it.
+        /// </summary>
+        /// <remarks>Only events declared <see cref="EventDelivery.Sticky"/> or
+        /// <see cref="EventDelivery.Replay"/> retain anything. Subscribers do not need this — a
+        /// subscription to a retaining event is delivered the retained value immediately, so this is
+        /// for code that wants the current value but has no reason to subscribe.</remarks>
+        public static bool TryGetLast(T eventEnum, out object sender, out object data)
+        {
+            return Facade.TryGetLast(eventEnum, out sender, out data);
+        }
+
+        /// <summary>
         /// Gets the published event name for <paramref name="eventEnum"/>.
         /// </summary>
         public static string GetEventName(T eventEnum)

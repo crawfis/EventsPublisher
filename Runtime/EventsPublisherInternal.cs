@@ -12,9 +12,28 @@ namespace CrawfisSoftware.Events
         private Queue<(string eventName, Action<string, object, object> callback, object sender, object data)> _callbackQueue
             = new Queue<(string eventName, Action<string, object, object> callback, object sender, object data)>();
 
-        // Guards against a callback that publishes an event starting a second, nested drain of the
-        // shared queue. Nested publishes enqueue and return; the outermost drain processes them.
+        // Guards against a callback that publishes an event, or subscribes to one, starting a second
+        // nested drain of the shared queue. Nested work enqueues and returns; the outermost drain
+        // processes it in order.
         private bool _isDraining;
+
+        // Retained values, per policy. These are per-frame by design: the policy registry is
+        // stack-global, but what was actually published lives in the frame it was published into, so
+        // Pop() discards it.
+        private readonly Dictionary<string, RetainedValue> _stickyValues = new Dictionary<string, RetainedValue>();
+        private readonly Dictionary<string, List<RetainedValue>> _journals = new Dictionary<string, List<RetainedValue>>();
+
+        /// <summary>A published <c>(sender, data)</c> pair held for later delivery.</summary>
+        private readonly struct RetainedValue
+        {
+            public readonly object Sender;
+            public readonly object Data;
+            public RetainedValue(object sender, object data)
+            {
+                Sender = sender;
+                Data = data;
+            }
+        }
 
         public void RegisterEvent(string eventName)
         {
@@ -24,11 +43,108 @@ namespace CrawfisSoftware.Events
                 events.Add(eventName, NullCallback);
             }
         }
+        /// <inheritdoc/>
+        public void RegisterEvent(string eventName, EventDelivery delivery)
+        {
+            EventsRegistry.DeclarePolicy(eventName, delivery);
+            RegisterEvent(eventName);
+        }
+
         public void SubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
             if (string.IsNullOrEmpty(eventName) || callback == null) return;
             RegisterEvent(eventName);
             events[eventName] += callback;
+            ReplayTo(eventName, callback);
+        }
+
+        /// <summary>
+        /// Delivers whatever this frame has retained for <paramref name="eventName"/> to a subscriber
+        /// that has just arrived.
+        /// </summary>
+        /// <remarks>
+        /// <para>Replay is immediate rather than deferred, so a subscriber knows the current state by
+        /// the time <c>Subscribe</c> returns. It fires exactly when the subscriber chose to subscribe,
+        /// which is a moment the subscriber controls — subscribing at the end of <c>Awake</c>, in
+        /// <c>OnEnable</c>, or in <c>Start</c> is sufficient to be fully constructed first.</para>
+        /// <para>It is routed through the same queue as a publish, so a <c>Subscribe</c> made from
+        /// inside a handler — while a drain is already in progress — enqueues and runs in order rather
+        /// than nesting.</para>
+        /// </remarks>
+        private void ReplayTo(string eventName, Action<string, object, object> callback)
+        {
+            switch (EventsRegistry.GetPolicy(eventName))
+            {
+                case EventDelivery.Sticky:
+                    if (_stickyValues.TryGetValue(eventName, out RetainedValue retained))
+                        _callbackQueue.Enqueue((eventName, callback, retained.Sender, retained.Data));
+                    break;
+
+                case EventDelivery.Replay:
+                    if (_journals.TryGetValue(eventName, out List<RetainedValue> journal))
+                        for (int i = 0; i < journal.Count; i++)
+                            _callbackQueue.Enqueue((eventName, callback, journal[i].Sender, journal[i].Data));
+                    break;
+
+                default:
+                    return; // Transient retains nothing.
+            }
+            Drain();
+        }
+
+        /// <summary>
+        /// Records a published value according to the event's delivery policy.
+        /// </summary>
+        private void Retain(string eventName, object sender, object data)
+        {
+            switch (EventsRegistry.GetPolicy(eventName))
+            {
+                case EventDelivery.Sticky:
+                    _stickyValues[eventName] = new RetainedValue(sender, data);
+                    break;
+
+                case EventDelivery.Replay:
+                    if (!_journals.TryGetValue(eventName, out List<RetainedValue> journal))
+                    {
+                        journal = new List<RetainedValue>();
+                        _journals[eventName] = journal;
+                    }
+                    journal.Add(new RetainedValue(sender, data));
+                    // Reported, never truncated: a silent cap would read as "everything was replayed".
+                    if (journal.Count == EventsRegistry.JournalWarningThreshold)
+                    {
+                        UnityEngine.Debug.LogWarning(
+                            $"EventsPublisher: the Replay journal for '{eventName}' has reached " +
+                            $"{EventsRegistry.JournalWarningThreshold} entries and keeps growing. Scope it by " +
+                            "publishing into a pushed publisher frame that is popped when its scene unloads.");
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Returns the most recently retained value for <paramref name="eventName"/>, if this frame has one.
+        /// </summary>
+        public bool TryGetLast(string eventName, out object sender, out object data)
+        {
+            if (!string.IsNullOrEmpty(eventName))
+            {
+                if (_stickyValues.TryGetValue(eventName, out RetainedValue retained))
+                {
+                    sender = retained.Sender;
+                    data = retained.Data;
+                    return true;
+                }
+                if (_journals.TryGetValue(eventName, out List<RetainedValue> journal) && journal.Count > 0)
+                {
+                    sender = journal[journal.Count - 1].Sender;
+                    data = journal[journal.Count - 1].Data;
+                    return true;
+                }
+            }
+            sender = null;
+            data = null;
+            return false;
         }
 
         public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
@@ -58,7 +174,21 @@ namespace CrawfisSoftware.Events
 
         public void PublishEvent(string eventName, object sender, object data)
         {
+            PublishEvent(eventName, sender, data, retain: true);
+        }
+
+        /// <summary>
+        /// Dispatches an event, optionally recording it under this frame's delivery policy.
+        /// </summary>
+        /// <remarks>The stack dispatches every publish to every frame so that subscribers on lower
+        /// frames still hear it, but retains only on the frame that was top at publish time. Retaining
+        /// on every frame would mean <c>Pop()</c> discarded nothing, since the value would also be
+        /// sitting in the frames underneath.</remarks>
+        internal void PublishEvent(string eventName, object sender, object data, bool retain)
+        {
             if (string.IsNullOrEmpty(eventName)) return;
+
+            if (retain) Retain(eventName, sender, data);
 
             if (events.TryGetValue(eventName, out Action<string, object, object> eventDelegate))
             {
@@ -72,8 +202,17 @@ namespace CrawfisSoftware.Events
             foreach (var handler in allSubscribers)
                 _callbackQueue.Enqueue((eventName, handler, sender, data));
 
-            // A nested publish (a callback publishing an event) only enqueues. The outermost call owns
-            // the drain, so the remaining callbacks for the *current* event run first, as intended.
+            Drain();
+        }
+
+        /// <summary>
+        /// Invokes queued callbacks until the queue is empty.
+        /// </summary>
+        /// <remarks>Nested work — a callback that publishes an event, or subscribes to one and
+        /// triggers a replay — only enqueues. The outermost call owns the drain, so the remaining
+        /// callbacks for the <em>current</em> event run first, as intended.</remarks>
+        private void Drain()
+        {
             if (_isDraining) return;
 
             _isDraining = true;
@@ -131,6 +270,8 @@ namespace CrawfisSoftware.Events
         {
             events.Clear();
             allSubscribers.Clear();
+            _stickyValues.Clear();
+            _journals.Clear();
         }
     }
 }

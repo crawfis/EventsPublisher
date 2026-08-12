@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace CrawfisSoftware.Events
 {
@@ -36,6 +37,8 @@ namespace CrawfisSoftware.Events
                 _eventEnumToStringMap[eventEnum] = eventName;
                 _eventStringToEnumMap[eventName] = eventEnum;
             }
+            // Before any publish can happen through this facade, so the first publish is retained.
+            DeclareDeliveryPolicies(enumType);
         }
 
         /// <summary>
@@ -117,6 +120,32 @@ namespace CrawfisSoftware.Events
             {
                 _eventsPublisher.RegisterEvent(eventName);
             }
+        }
+
+        /// <summary>
+        /// Reads <see cref="EventDeliveryAttribute"/> off each member of <typeparamref name="T"/> and
+        /// declares the policies.
+        /// </summary>
+        /// <remarks>Done once, here, rather than per publish: the reflection cost is paid at
+        /// construction and the publisher then does a dictionary lookup per event.</remarks>
+        private void DeclareDeliveryPolicies(Type enumType)
+        {
+            foreach (KeyValuePair<T, string> entry in _eventEnumToStringMap)
+            {
+                FieldInfo member = enumType.GetField(entry.Key.ToString(), BindingFlags.Public | BindingFlags.Static);
+                if (member == null) continue;
+                var attribute = (EventDeliveryAttribute)Attribute.GetCustomAttribute(member, typeof(EventDeliveryAttribute));
+                if (attribute == null) continue;
+                EventsRegistry.DeclarePolicy(entry.Value, attribute.Delivery);
+            }
+        }
+
+        /// <summary>
+        /// Returns the most recently retained value for <paramref name="eventEnum"/>, if there is one.
+        /// </summary>
+        public bool TryGetLast(T eventEnum, out object sender, out object data)
+        {
+            return _eventsPublisher.TryGetLast(_eventEnumToStringMap[eventEnum], out sender, out data);
         }
     }
 }
