@@ -83,6 +83,26 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
+        /// Gets the event-name prefix an enum type projects onto.
+        /// </summary>
+        /// <remarks>
+        /// <para>Defaults to <see cref="Type.Name"/>, so <c>GameFlowEvents.GameStarting</c> becomes
+        /// <c>"GameFlowEvents/GameStarting"</c>. <see cref="EventEnumAttribute.Prefix"/> overrides it,
+        /// which is how two enums with the same simple name in different namespaces are told apart
+        /// without renaming either type.</para>
+        /// <para>This is the single definition of the projection. The runtime facade and the editor's
+        /// Inspector dropdown both call it, so they cannot drift — if they did, the Inspector would
+        /// write a name the publisher is not keyed on.</para>
+        /// </remarks>
+        public static string GetPrefix(Type enumType)
+        {
+            if (enumType == null) return string.Empty;
+            var attribute = (EventEnumAttribute)Attribute.GetCustomAttribute(enumType, typeof(EventEnumAttribute));
+            string prefix = attribute == null ? null : attribute.Prefix;
+            return string.IsNullOrEmpty(prefix) ? enumType.Name : prefix;
+        }
+
+        /// <summary>
         /// Records that <paramref name="enumType"/> projects onto <paramref name="prefix"/>, and reports
         /// a second enum type claiming the same one.
         /// </summary>

@@ -29,7 +29,7 @@ namespace CrawfisSoftware.Events
         {
             _eventsPublisher = eventsPublisher;
             var enumType = typeof(T);
-            string enumName = enumType.Name;
+            string enumName = EventsRegistry.GetPrefix(enumType);
             EventsRegistry.ClaimPrefix(enumName, enumType);
             foreach (T eventEnum in Enum.GetValues(typeof(T)))
             {

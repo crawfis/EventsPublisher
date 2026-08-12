@@ -81,10 +81,30 @@ serialized shape, so Unity cannot carry the old value across and every name alre
 a `.unity` or `.prefab` asset would be lost. The attribute leaves the field a string, so
 existing values keep working and only the authoring experience changes.
 
+`EventRef` also has publisher overloads, so an authored call site never unwraps the string:
+
+```csharp
+EventsPublisher.Instance.PublishEvent(_eventToFire, this, null);
+```
+
 The dropdown lists every member of every enum marked `[EventEnum]`, grouped by family. A value
 that matches no known event is shown as `Missing/<value>` rather than silently cleared, so a
 name whose enum is not yet marked — or that has since been renamed — is surfaced instead of
 being replaced the moment the Inspector paints it.
+
+## Name collisions
+
+Event names are projected from the enum's simple type name, so two enums both called
+`Events` in different namespaces would share every event. The publisher reports this at
+registration. Fix it with an explicit prefix on one of them:
+
+```csharp
+[EventEnum(Prefix = "GuiEvents")]
+public enum Events { ... }
+```
+
+Only that enum's names change. Set it when the enum is introduced — changing it later
+renames every one of its events and breaks any name already serialized.
 
 ## Diagnostics
 

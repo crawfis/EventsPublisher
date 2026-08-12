@@ -11,9 +11,9 @@ namespace CrawfisSoftware.Events.Editor
     /// </summary>
     /// <remarks>
     /// <para>The names must match what <see cref="EventsPublisherEnums{T}"/> projects at runtime, since
-    /// the chosen string is what the publisher is keyed on. The projection is duplicated here rather
-    /// than shared because the runtime one lives behind a generic type parameter this editor code does
-    /// not have; <see cref="EventNameCatalogTests"/> pins the two together.</para>
+    /// the chosen string is what the publisher is keyed on. Both call
+    /// <see cref="EventsRegistry.GetPrefix"/>, so there is one definition of the projection rather than
+    /// two that could drift; <see cref="EventNameCatalogTests"/> pins them together regardless.</para>
     /// <para>Marking an enum <see cref="EventEnumAttribute"/> is the opt-in. An enum with no attribute
     /// contributes nothing, and a serialized value naming one of its members is treated as unknown —
     /// shown as missing, never silently cleared.</para>
@@ -56,7 +56,7 @@ namespace CrawfisSoftware.Events.Editor
                 foreach (Type enumType in enumTypes)
                 {
                     if (enumType == null || !enumType.IsEnum) continue;
-                    string prefix = enumType.Name;
+                    string prefix = EventsRegistry.GetPrefix(enumType);
                     foreach (object value in Enum.GetValues(enumType))
                     {
                         string candidate = prefix + "/" + value;

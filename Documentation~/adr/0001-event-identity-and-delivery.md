@@ -101,12 +101,39 @@ This preserves `SubscribeToAllEvents` and every tool built on it, unchanged.
 - Null/empty guards on event names.
 - Allocation-free `TryGetEnum` so consumers stop calling `Enum.Parse`.
 
-**Stage 1 — close the write side.** Demote the public `string` overloads to
-`internal`, or mark `[Obsolete]` first for package consumers. Authored code goes
-through an enum facade. The typo class largely disappears with no new types.
+**Stage 1 — REVISED: the write side cannot be closed, and does not need to be.**
 
-Blocked on the Inspector-authored strings above: those call sites need a typed
-Inspector control before the string API can be closed. See Open Questions.
+As originally written this stage demoted the public `string` overloads to `internal`
+so that authored code had to go through an enum facade. That is not implementable,
+and attempting it revealed the goal was mis-stated.
+
+A component whose event is chosen in the Inspector holds that name as **data, not as
+a literal**, and must still hand a string to the publisher at runtime.
+`FireEventAfterSceneLoads`, `CloseSceneOnEvent`, `FireEventWhenSceneCloses`,
+`LoadSceneAfterGameControlEvent`, `TimedEvent` and the `Test_AutoFire*` scripts all do
+exactly this — and they still do it *after* migrating to `EventRef`, because the
+reference resolves to a string at the call. Closing the API would break every one of
+them permanently, not just until they migrate. The editor's `EventMenu`, which
+publishes a name picked from the registered list, is in the same position.
+
+The hazard was never the string API. It was **a name being typed by hand with nothing
+to check it**. That is closed at the authoring step instead:
+
+- `EventsFor<T>` — compile-checked, for names known in code.
+- `EventRef` / `[EventName]` — a dropdown of real events, for names authored in the
+  Inspector.
+- `StrictMode` — reports a publish of a name nothing registered, at runtime.
+- `EventRef` overloads on `IEventsPublisher<string>` (extension methods, so no
+  implementer changes) — so an authored call site never unwraps the string itself.
+
+With those in place the remaining raw-string surface is used only for names that are
+genuinely dynamic, which is what it is for. It stays public and is not marked
+`[Obsolete]`: marking it would flag `EventsPublisherEnums<T>`'s own legitimate use of
+it as the implementation substrate, and every dynamic call site, for no gain.
+
+Removing implicit registration from `SubscribeToEvent` — the one piece of the original
+Stage 1 still worth doing — is deferred until the Inspector call sites have moved to
+`EventRef`, since it would break subscribing to a name that is not pre-registered.
 
 **Stage 2 — `EventId` as identity.**
 
@@ -133,14 +160,14 @@ Stage 0 lands, whereas a wrong payload cast fails inside a handler.
 
 ### Rejected for now
 
-- **Switching the enum prefix to `Type.FullName`.** This closes the residual
-  collision hole (two enums with the same simple name in different namespaces), but
-  the projected names are serialized into `.unity` and `.prefab` assets. Changing
-  the scheme would silently break every baked reference — the exact rename hazard
-  this ADR argues against. Stage 0 ships a collision *detector* instead.
-  **Reopened** — see Open Question 1. This rejection rests entirely on the baked
-  strings; if the scene objects move onto enums, `FullName` becomes viable and the
-  collision detector can be retired.
+- **Switching the enum prefix to `Type.FullName`.** REJECTED, now permanently. It
+  closes the residual collision hole (two enums with the same simple name in different
+  namespaces), but renames *every* event in the project to do it, breaking every name
+  serialized into a `.unity` or `.prefab` asset — the exact rename hazard this ADR
+  argues against, applied globally to fix a local problem.
+  `[EventEnum(Prefix = "...")]` supersedes it: an explicit prefix on the one enum that
+  collides, leaving every other name untouched. The Stage 0 collision *detector* is
+  what surfaces the need, and now has a fix to point at rather than "rename the type".
 - **Message-type-as-identity** (`readonly record struct GameStarted(int Score)`,
   MediatR/MessagePipe shape). The idiomatic C# endpoint: the CLR type is the
   identity, namespaces make collisions impossible, rename refactoring is safe, and
