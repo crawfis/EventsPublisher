@@ -14,6 +14,19 @@ namespace CrawfisSoftware.Events
         /// </summary>
         public static IStackEventsPublisher<string> Instance { get; private set; }
 
+        /// <summary>
+        /// When enabled, publishing an event name that no publisher in the stack has registered is
+        /// reported as an error. Without this, a misspelled name silently reaches no subscriber while
+        /// still notifying "all events" subscribers, so the logger prints it and the system looks healthy.
+        /// Defaults to enabled in the editor and in development builds.
+        /// </summary>
+        public static bool StrictMode { get; set; } =
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            true;
+#else
+            false;
+#endif
+
         static EventsPublisher()
         {
             Instance = new EventsPublisher();
@@ -48,7 +61,29 @@ namespace CrawfisSoftware.Events
         /// <inheritdoc/>
         public void PublishEvent(string eventName, object sender, object data)
         {
+            if (StrictMode) WarnIfUnregistered(eventName, sender);
             foreach (IEventsPublisher<string> publisher in _eventsPublishers) { publisher.PublishEvent(eventName, sender, data); }
+        }
+
+        /// <summary>
+        /// Reports a publish of an event name that no frame in the stack has registered. Checked across
+        /// the whole stack, since <see cref="RegisterEvent"/> only registers with the top frame.
+        /// </summary>
+        private void WarnIfUnregistered(string eventName, object sender)
+        {
+            if (string.IsNullOrEmpty(eventName))
+            {
+                UnityEngine.Debug.LogError($"EventsPublisher: published a null or empty event name from {sender}.");
+                return;
+            }
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers)
+            {
+                if (publisher is EventsPublisherInternal internalPublisher && internalPublisher.IsEventRegistered(eventName))
+                    return;
+            }
+            UnityEngine.Debug.LogError(
+                $"EventsPublisher: '{eventName}' was published by {sender} but is not registered, so no subscriber will receive it. " +
+                "Check for a misspelled event name. Set EventsPublisher.StrictMode = false to silence this.");
         }
 
         /// <inheritdoc/>

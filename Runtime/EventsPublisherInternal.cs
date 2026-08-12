@@ -9,10 +9,16 @@ namespace CrawfisSoftware.Events
         // Define the events that occur in the game
         private readonly Dictionary<string, Action<string, object, object>> events = new Dictionary<string, Action<string, object, object>>();
         private readonly List<Action<string, object, object>> allSubscribers = new List<Action<string, object, object>>();
-        private Queue<(string eventName, Delegate callback, object sender, object data)> _callbackQueue = new Queue<(string eventName, Delegate callback, object sender, object data)>();
+        private Queue<(string eventName, Action<string, object, object> callback, object sender, object data)> _callbackQueue
+            = new Queue<(string eventName, Action<string, object, object> callback, object sender, object data)>();
+
+        // Guards against a callback that publishes an event starting a second, nested drain of the
+        // shared queue. Nested publishes enqueue and return; the outermost drain processes them.
+        private bool _isDraining;
 
         public void RegisterEvent(string eventName)
         {
+            if (string.IsNullOrEmpty(eventName)) return;
             if (!events.ContainsKey(eventName))
             {
                 events.Add(eventName, NullCallback);
@@ -20,15 +26,24 @@ namespace CrawfisSoftware.Events
         }
         public void SubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
+            if (string.IsNullOrEmpty(eventName) || callback == null) return;
             RegisterEvent(eventName);
-            if (events.ContainsKey(eventName) && callback != null)
-                events[eventName] += callback;
+            events[eventName] += callback;
         }
 
         public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
-            if (events.ContainsKey(eventName) && callback != null)
+            if (string.IsNullOrEmpty(eventName) || callback == null) return;
+            if (events.ContainsKey(eventName))
                 events[eventName] -= callback;
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="eventName"/> has been registered with this publisher.
+        /// </summary>
+        internal bool IsEventRegistered(string eventName)
+        {
+            return !string.IsNullOrEmpty(eventName) && events.ContainsKey(eventName);
         }
 
         public void SubscribeToAllEvents(Action<string, object, object> callback)
@@ -43,33 +58,47 @@ namespace CrawfisSoftware.Events
 
         public void PublishEvent(string eventName, object sender, object data)
         {
+            if (string.IsNullOrEmpty(eventName)) return;
+
             if (events.TryGetValue(eventName, out Action<string, object, object> eventDelegate))
             {
-                //eventDelegate(sender, data);
                 var callbacks = eventDelegate.GetInvocationList();
 
                 // Queue up each callback. This ensures that if a callback publishes an event, that the
                 // other callbacks for *this* event are called before the newly published event's callbacks.
                 foreach (var callback in callbacks)
-                    _callbackQueue.Enqueue((eventName, callback, sender, data));
+                    _callbackQueue.Enqueue((eventName, (Action<string, object, object>)callback, sender, data));
             }
             foreach (var handler in allSubscribers)
                 _callbackQueue.Enqueue((eventName, handler, sender, data));
-            //handler(eventName, sender, data);
 
-            while (_callbackQueue.Count > 0)
+            // A nested publish (a callback publishing an event) only enqueues. The outermost call owns
+            // the drain, so the remaining callbacks for the *current* event run first, as intended.
+            if (_isDraining) return;
+
+            _isDraining = true;
+            try
             {
-                var message = _callbackQueue.Dequeue();
-                eventName = message.eventName;
-                var callback = message.callback;
-                try
+                while (_callbackQueue.Count > 0)
                 {
-                    callback.DynamicInvoke(eventName, message.sender, message.data);
+                    var message = _callbackQueue.Dequeue();
+                    Action<string, object, object> callback = message.callback;
+                    try
+                    {
+                        callback(message.eventName, message.sender, message.data);
+                    }
+                    catch (Exception e)
+                    {
+                        UnityEngine.Debug.LogError(
+                            $"Exception publishing {message.eventName} to {callback.Target}: {e}");
+                    }
                 }
-                catch (Exception e)
-                {
-                    UnityEngine.Debug.LogError($"Exception publishing {message.eventName}: {callback.Target} {e.InnerException.Message} {e.InnerException.StackTrace} {e.InnerException.Source}");
-                }
+            }
+            finally
+            {
+                // Never leave stale callbacks queued; they would otherwise flush during an unrelated publish.
+                _callbackQueue.Clear();
+                _isDraining = false;
             }
         }
 

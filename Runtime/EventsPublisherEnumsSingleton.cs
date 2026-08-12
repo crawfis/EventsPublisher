@@ -59,6 +59,24 @@ namespace CrawfisSoftware.Events
         {
             _eventsPublisher.UnsubscribeToEvent(eventEnum, callback);
         }
+
+        /// <summary>
+        /// Gets the published event name for <paramref name="eventEnum"/>.
+        /// </summary>
+        public string GetEventName(T eventEnum)
+        {
+            return _eventsPublisher.GetEventName(eventEnum);
+        }
+
+        /// <summary>
+        /// Recovers the enum value for a published event name, without allocating.
+        /// </summary>
+        /// <remarks>Prefer this over slicing the name on '/' and calling <see cref="Enum.Parse{T}(string)"/>
+        /// inside an "all events" handler, which allocates a string per published event.</remarks>
+        public bool TryGetEnum(string eventName, out T eventEnum)
+        {
+            return _eventsPublisher.TryGetEnum(eventName, out eventEnum);
+        }
         //private static void RegisterKnownEvents()
         //{
         //    foreach (T eventEnum in Enum.GetValues(typeof(T)))
