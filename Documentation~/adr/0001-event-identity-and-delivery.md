@@ -453,28 +453,86 @@ Not fixed here; they are not identity or timing problems.
    Statics therefore still reset on entering play mode today, so a static registry is
    currently safe. The project is one checkbox away from statics persisting, so the
    registry resets explicitly rather than relying on that.
+5. **Inspector call sites** — adopt a serializable `EventRef` (enum type name +
+   member name) with a two-dropdown property drawer, rather than a concrete
+   per-family subclass of each generic component. Keeps one component per behavior,
+   avoids the eight-components × four-families cross product, and removes typos at
+   the authoring step, which is the only step that exists for scene data. This
+   unblocks Stage 1 and reopens `Type.FullName` (see *Rejected for now*).
+6. **`Replay` policy** — in scope. All three policies ship: `Transient`, `Sticky`,
+   `Replay`.
 
-## Open questions
+## Sticky reset granularity — recommendation, pending confirmation
 
-1. **Inspector call sites.** These block Stage 1. The owner expects to be able to
-   move the scene-object strings onto enums without much difficulty; if so, three
-   consequences follow and should be confirmed before starting:
-   - Stage 1 (making the `string` API `internal`) becomes viable.
-   - The `Type.FullName` rejection above is **reopened** — that rejection rests
-     entirely on names being baked into `.unity`/`.prefab` assets. Remove the baked
-     strings and switching to `FullName` closes the namespace-collision hole for
-     free, at which point the Stage 0 collision detector can be retired.
-   - Beware the cross product. Unity cannot serialize `System.Enum` polymorphically,
-     so a per-family concrete subclass is needed for each generic component — eight
-     string-using components across four enum families is up to 32 classes if done
-     naively. A serializable `EventRef` (enum type name + member name, with a
-     two-dropdown property drawer) keeps one component per behavior, avoids typos,
-     and projects to the same event name. That is the same "string is a projection,
-     not the identity" principle applied to serialized data, and is likely the
-     better fit for Inspector fields specifically.
-2. **`Replay` policy** — is the full-journal variant wanted at all, or is
-   `Transient` + `Sticky` sufficient? `EventHistory` is the only obvious consumer,
-   and it already subscribes to all events.
-3. **Sticky reset granularity** — `Pop()` and `Clear()` are settled. Is a
-   per-event `Invalidate(name)` also needed for cases where a level becomes unknown
-   rather than changing value?
+`Pop()` and `Clear()` are settled but coarse. The remaining question is whether a
+per-event `Invalidate(name)` is also needed.
+
+### The gap
+
+A sticky event has three possible states, and publishing only reaches two of them:
+
+| State | Late subscriber sees |
+|---|---|
+| Never published | not invoked |
+| Has a retained value | the value, at end of frame |
+| **Had a value, now untrue** | **the stale value** |
+
+The third state is the gap. The distinction is *value changed* versus *value became
+unknown*:
+
+- `DifficultyChanged(Hard)` → `DifficultyChanged(Easy)` is a **change**. Publishing
+  handles it; no invalidation needed.
+- `RemoteConfigUpdated(config)` → the player signs out and the session's config is no
+  longer valid. There is no new config to publish. Publishing
+  `RemoteConfigUpdated(null)` asserts *"here is the new config, it is null"*, which is
+  a different and weaker claim than *"there is no current answer"* — and it forces
+  every subscriber to null-check.
+
+The contracts differ at the subscriber: after `Invalidate`, a late subscriber is not
+invoked at all, exactly as if the event had never been published. After
+`Publish(null)`, it is invoked with null.
+
+The test is therefore: **is there a meaningful new value? If yes, publish. If the
+answer becomes "no answer", invalidate.**
+
+### Why Unity makes this pressing rather than academic
+
+Sticky retains `object sender` and `object data` indefinitely. `sender` is typically a
+`MonoBehaviour`, and `data` may be an arbitrary object graph rooted in the scene.
+
+When that scene unloads, the C++ object is destroyed but the managed wrapper stays
+alive as long as the sticky cache references it — the "fake null" state, where the
+reference is non-null to the CLR but `== null` under Unity's overloaded operator. Two
+consequences:
+
+- **Stale replay.** A subscriber in the *next* level receives a retained value
+  pointing at destroyed objects.
+- **Retention.** The wrapper itself is small, but the payload graph is not; a sticky
+  event can hold a whole level's worth of objects past unload.
+
+So some mechanism to drop retained values is required, not optional. `Invalidate` is
+the manual form.
+
+### Recommendation
+
+Adopt `Invalidate(name)`, scoped narrowly as **cache hygiene**:
+
+1. **Silent.** It drops the retained value and affects only future late subscribers.
+   It does not notify current subscribers.
+2. **Auto-drop a destroyed sender.** At replay time, if the retained sender is a
+   `UnityEngine.Object` that compares equal to null, drop the entry and do not
+   replay. This defends the common case without requiring discipline. It cannot
+   detect scene references inside `data`, so manual `Invalidate` on teardown is still
+   needed.
+3. **Consider per-scene frames.** `IStackEventsPublisher` already models scoping: if
+   an additive gameplay scene pushed a frame on load and popped it on unload, sticky
+   values published into it would be discarded automatically. Nothing pushes per
+   scene today — `Push()` is called once from the static constructor — so this is new
+   discipline rather than existing behavior, but it would make most manual
+   invalidation unnecessary.
+
+The scoping rule that keeps this from sprawling: **if subscribers need to react to
+the invalidation, it is not an invalidation — it is a state value.** Model it as an
+explicit "unknown" member of the level's value domain, per the existing guidance to
+prefer an enum over `bool` wherever "not yet" is meaningful. `Invalidate` exists only
+so that a late subscriber is not told something false.
