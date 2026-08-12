@@ -1,6 +1,7 @@
 # ADR 0001 — Event Identity and Delivery Timing
 
-**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 design agreed, unimplemented.
+**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 fully specified;
+`EventsFor<T>` implemented, delivery policy not yet.
 **Date:** 2026-08-12
 **Applies to:** `com.crawfissoftware.eventspublisher` 2.3.1 and consumers
 (`EventsPublishingTesting`, `RunnerUGSTemplate`)
