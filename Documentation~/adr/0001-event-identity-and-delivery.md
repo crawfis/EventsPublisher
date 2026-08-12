@@ -461,13 +461,61 @@ Not fixed here; they are not identity or timing problems.
    unblocks Stage 1 and reopens `Type.FullName` (see *Rejected for now*).
 6. **`Replay` policy** — in scope. All three policies ship: `Transient`, `Sticky`,
    `Replay`.
+7. **Sticky reset granularity** — no `Invalidate(name)`. `Pop()` and `Clear()` are
+   the only reset mechanisms. Retained values are expected to stay valid across
+   scene boundaries, and the publisher stack provides the scoping where they should
+   not. See *Sticky reset granularity* below.
 
-## Sticky reset granularity — recommendation, pending confirmation
+## Sticky reset granularity — DECIDED: no `Invalidate`
 
-`Pop()` and `Clear()` are settled but coarse. The remaining question is whether a
-per-event `Invalidate(name)` is also needed.
+`Pop()` and `Clear()` are the only reset mechanisms. A per-event `Invalidate(name)`
+was considered and rejected. The analysis below is retained because it explains what
+the policy does *not* cover, and because two of its conclusions were wrong for this
+codebase in instructive ways.
 
-### The gap
+### Why it was rejected
+
+- **Retained values are expected to stay valid.** Most sticky state is cached
+  deliberately and remains correct across scene boundaries. Discarding it is the
+  unusual case, not the default.
+- **The stack already provides the scoping.** Where a value genuinely should not
+  outlive its scope, a publisher frame is the right unit, and `Pop()` discards it.
+- **The motivating example was mis-modelled.** Sign-out was used below as a case
+  where a level "becomes unknown". It is not: it is a value change, correctly
+  expressed as `AuthStateChanged(SignedOut)`. It is also read at exactly one point in
+  the flow — after the game ends and before the main menu is shown — so a stale
+  `RemoteConfigUpdated` between sign-out and re-authentication is never observed.
+  Re-authentication republishes it.
+
+### Retracted: auto-drop on a destroyed sender
+
+An earlier draft recommended that replay silently drop a retained value whose
+`sender` is a `UnityEngine.Object` comparing equal to null. **This is withdrawn — it
+would be actively harmful here.** A destroyed sender says nothing about whether the
+payload is still valid: `RemoteConfigUpdated` published by a manager that has since
+been destroyed still carries a perfectly good config. Silently dropping it would
+break precisely the "cached and can continue" case that is the norm.
+
+If a diagnostic is wanted at all, it should report rather than discard.
+
+### Where the retention concern actually lives
+
+The concern does not vanish; it moves, and it lands on `Replay` rather than `Sticky`:
+
+- The events that would be `Sticky` carry configs, enums and bools — `LevelConfig`,
+  `DifficultyConfig`, `bool`. These are assets or value types and survive scene
+  unload cleanly. This is why the leak argument below does not apply to them.
+- The events that would be `Replay` are the accumulating gameplay ones —
+  `TrackSegmentCreated`, `SplineSegmentCreated`. A full journal of those holds a
+  reference to **every segment ever created**, and unlike a sticky value it grows
+  without bound for the whole session rather than holding a single stale entry.
+
+`Replay` is therefore the policy that needs scoping, and the publisher stack is the
+mechanism: a gameplay scene that pushes a frame on load and pops it on unload
+discards its journal with the level. Implementation should not offer `Replay` without
+that scoping story.
+
+### The gap this leaves
 
 A sticky event has three possible states, and publishing only reaches two of them:
 
@@ -488,51 +536,19 @@ unknown*:
   a different and weaker claim than *"there is no current answer"* — and it forces
   every subscriber to null-check.
 
-The contracts differ at the subscriber: after `Invalidate`, a late subscriber is not
-invoked at all, exactly as if the event had never been published. After
-`Publish(null)`, it is invoked with null.
+The contracts differ at the subscriber: a value that was never published does not
+invoke the subscriber at all, whereas `Publish(null)` invokes it with null.
 
-The test is therefore: **is there a meaningful new value? If yes, publish. If the
-answer becomes "no answer", invalidate.**
+**Accepted consequence.** Without `Invalidate`, an event whose answer becomes
+"no answer" has only two ways to express it: leave the stale value retained, or
+publish an explicit unknown. The first is acceptable here because such values are
+either never read while stale, or are republished before they are. The second is
+preferred where a subscriber genuinely must distinguish — and it is not an
+invalidation at all but a state value, per the existing guidance to prefer an enum
+over `bool` wherever "not yet" is meaningful:
 
-### Why Unity makes this pressing rather than academic
+```csharp
+AuthStateChanged   // { Unknown, SignedOut, SigningIn, SignedIn }
+```
 
-Sticky retains `object sender` and `object data` indefinitely. `sender` is typically a
-`MonoBehaviour`, and `data` may be an arbitrary object graph rooted in the scene.
-
-When that scene unloads, the C++ object is destroyed but the managed wrapper stays
-alive as long as the sticky cache references it — the "fake null" state, where the
-reference is non-null to the CLR but `== null` under Unity's overloaded operator. Two
-consequences:
-
-- **Stale replay.** A subscriber in the *next* level receives a retained value
-  pointing at destroyed objects.
-- **Retention.** The wrapper itself is small, but the payload graph is not; a sticky
-  event can hold a whole level's worth of objects past unload.
-
-So some mechanism to drop retained values is required, not optional. `Invalidate` is
-the manual form.
-
-### Recommendation
-
-Adopt `Invalidate(name)`, scoped narrowly as **cache hygiene**:
-
-1. **Silent.** It drops the retained value and affects only future late subscribers.
-   It does not notify current subscribers.
-2. **Auto-drop a destroyed sender.** At replay time, if the retained sender is a
-   `UnityEngine.Object` that compares equal to null, drop the entry and do not
-   replay. This defends the common case without requiring discipline. It cannot
-   detect scene references inside `data`, so manual `Invalidate` on teardown is still
-   needed.
-3. **Consider per-scene frames.** `IStackEventsPublisher` already models scoping: if
-   an additive gameplay scene pushed a frame on load and popped it on unload, sticky
-   values published into it would be discarded automatically. Nothing pushes per
-   scene today — `Push()` is called once from the static constructor — so this is new
-   discipline rather than existing behavior, but it would make most manual
-   invalidation unnecessary.
-
-The scoping rule that keeps this from sprawling: **if subscribers need to react to
-the invalidation, it is not an invalidation — it is a state value.** Model it as an
-explicit "unknown" member of the level's value domain, per the existing guidance to
-prefer an enum over `bool` wherever "not yet" is meaningful. `Invalidate` exists only
-so that a late subscriber is not told something false.
+That covers the case `Invalidate` was proposed for, without a second mechanism.
