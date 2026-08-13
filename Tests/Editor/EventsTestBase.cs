@@ -30,7 +30,10 @@ namespace CrawfisSoftware.Events.Tests
         {
             ResetEverything();
             Log = new List<string>();
+            // Set rather than assumed: both default off outside the editor, and a test that depended on
+            // a compile symbol would pass here and fail in a player build of the same suite.
             EventsPublisher.StrictMode = true;
+            EventsDiagnostics.Enabled = true;
         }
 
         [TearDown]

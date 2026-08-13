@@ -102,7 +102,11 @@ namespace CrawfisSoftware.Events
                     break;
 
                 default:
-                    return; // Transient retains nothing.
+                    // Transient retains nothing, so a subscriber arriving after this event has already
+                    // been published hears nothing. That is the symptom the bool mirrors exist to work
+                    // around, and the migration wants it counted rather than guessed at.
+                    EventsDiagnostics.NoteTransientSubscribe(eventId);
+                    return;
             }
             Drain();
         }

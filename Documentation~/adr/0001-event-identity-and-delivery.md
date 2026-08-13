@@ -694,10 +694,10 @@ consumers continue to compile.
 
 ### Tests
 
-`Tests/Editor` holds 80 EditMode tests across seven fixtures, covering dispatch ordering
+`Tests/Editor` holds 99 EditMode tests across nine fixtures, covering dispatch ordering
 and isolation, the static facade and its registration timing, all three delivery
-policies, the interned identity, the Inspector catalog and `EventRef`, and typed
-payloads. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
+policies, the interned identity, the Inspector catalog and `EventRef`, typed payloads,
+the late-delivery diagnostic, and the upgrade audit's reasoning. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
 test can reset `EventsRegistry`'s static state — a public reset would be a footgun in
 game code.
 
@@ -708,12 +708,15 @@ dropping the null-name guard; zero-based `EventId` handles; clearing the intern 
 reset; rebuilding a typed handler's wrapper at unsubscribe; skipping the publish-time and
 declaration-time payload checks; and delivering a mismatched payload anyway.
 
-Two mutations initially failed *nothing*, and both were treated as coverage gaps rather
+Three mutations initially failed *nothing*, and each was treated as a coverage gap rather
 than written off. Removing the unset-`EventRef` guard from the extension methods changed
 no behaviour, because the publisher already rejects null names — the code comment was
 corrected to say so rather than keep a claim no test supported. Accepting null for any
 payload type went unnoticed because no test subscribed a *value*-typed handler and sent
-it null; two tests were added, and the mutation now fails three.
+it null; two tests were added, and the mutation now fails three. Counting *every*
+subscribe as a late delivery went unnoticed because no test asserted that an early
+subscriber is not reported — the diagnostic's entire value rests on being quiet, since a
+report that flags every event is one nobody can act on.
 
 Consumers must add the package to `testables` in `Packages/manifest.json` for Unity to
 build them.

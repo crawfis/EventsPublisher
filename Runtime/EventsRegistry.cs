@@ -259,6 +259,9 @@ namespace CrawfisSoftware.Events
             _policies.Clear();
             _payloadTypes.Clear();
             TypedSubscriptions.Clear();
+            // Cleared at the start of a play session, not the end, so what the audit reads afterwards is
+            // one boot sequence rather than an editor session's accumulated noise.
+            EventsDiagnostics.Reset();
             // The intern table is deliberately NOT cleared. Handles are values that callers may still
             // hold; recycling them would silently repoint an EventId at a different event. It is bounded
             // by the number of distinct event names in the project, so letting it persist costs nothing.

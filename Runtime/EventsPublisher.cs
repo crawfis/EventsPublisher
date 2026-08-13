@@ -75,6 +75,8 @@ namespace CrawfisSoftware.Events
         private void PublishResolved(EventId eventId, string eventName, object sender, object data)
         {
             if (StrictMode) WarnIfPayloadMismatch(eventId, eventName, sender, data);
+            // Here rather than in the frames below, so one publish counts once however deep the stack is.
+            EventsDiagnostics.NotePublish(eventId);
 
             // Dispatch to every frame so subscribers underneath still hear it, but retain only on the
             // frame that is top at publish time. A Stack<T> enumerates top-down, so the first is Peek().

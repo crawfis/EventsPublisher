@@ -159,6 +159,23 @@ reaches no subscriber while still notifying "all events" subscribers, so the log
 prints it and the system looks healthy. It also reports a publish whose payload is not
 what the event declared it carries, naming the sender.
 
+## Upgrading an existing project
+
+**Window > Events > Upgrade Audit** reflects over the project and reads its assets, then
+reports which upgrade steps it has and has not taken — so it describes the project in
+front of it rather than a generic one. Findings are graded: an *Action* is discovered
+from evidence, a *Suggestion* is a guess or a judgement it cannot make for you.
+
+Enter play mode and run the boot sequence before refreshing. `EventsDiagnostics` records
+every event that was subscribed to *after* it had already been published — the delivery
+that was missed — so the edge-or-level decision is read off a run rather than guessed.
+It is on in the editor and development builds, off in release.
+
+`Documentation~/UPGRADING.md` is the step-by-step guide, and
+`Documentation~/upgrade-prompt.md` is a project-agnostic prompt for doing it with an AI
+assistant. Nothing in the upgrade is required — the package is source-compatible, and
+every step is opt-in.
+
 ## Running the tests
 
 The tests live in `Tests/Editor` and are EditMode tests. Unity only builds a package's
