@@ -1,7 +1,8 @@
 # ADR 0001 — Event Identity and Delivery Timing
 
-**Status:** Decision 1 accepted, Stage 0 implemented. Decision 2 implemented
-(`EventsFor<T>`, `Transient`/`Sticky`/`Replay`, immediate replay, `TryGetLast`).
+**Status:** Decision 1 — Stages 0 and 2 implemented, Stage 1 revised, Stage 3 outstanding.
+Decision 2 implemented (`EventsFor<T>`, `Transient`/`Sticky`/`Replay`, immediate replay,
+`TryGetLast`).
 **Date:** 2026-08-12
 **Applies to:** `com.crawfissoftware.eventspublisher` 2.3.1 and consumers
 (`EventsPublishingTesting`, `RunnerUGSTemplate`)
@@ -135,19 +136,50 @@ Removing implicit registration from `SubscribeToEvent` — the one piece of the 
 Stage 1 still worth doing — is deferred until the Inspector call sites have moved to
 `EventRef`, since it would break subscribing to a name that is not pre-registered.
 
-**Stage 2 — `EventId` as identity.**
+**Stage 2 — `EventId` as identity.** *(Implemented.)*
 
 ```csharp
 public readonly struct EventId : IEquatable<EventId>
 {
-    private readonly int _id;                    // interned; dictionary key
-    public string Name => EventNames.Get(_id);   // projection — observers only
+    private readonly int _handle;                        // interned; one-based
+    public string Name => EventsRegistry.GetInternedName(this);   // projection
 }
 ```
 
-`EventsPublisherEnums<T>` becomes the interner rather than a string factory, so the
-enum authoring surface is unchanged. The internal dictionary keys on `int`: no
-string hashing, no collisions, no allocation.
+The publisher's per-event dictionaries — subscribers, sticky values, `Replay` journals —
+are keyed on `EventId`. Callbacks are unchanged: a handler still receives
+`(string eventName, object sender, object data)`, resolved off the id. That is what
+kept this from breaking every subscriber in `RunnerUGSTemplate`.
+
+`EventId` entry points live on a separate `IEventIdPublisher` rather than on
+`IEventsPublisher<T>`, so adding them breaks no implementer. `EventsPublisherEnums<T>`
+resolves each member's id once at construction and takes the id path when the injected
+publisher supports it, falling back to the name path when it does not.
+
+Two invariants carry weight, and both are pinned by tests that fail broadly when broken:
+
+- **Handles are one-based**, so `default(EventId)` is invalid rather than aliasing the
+  first interned event.
+- **The intern table survives `ResetStaticState`.** Handles are values a caller may
+  still hold; recycling them would silently repoint an `EventId` at a different event.
+  The table is bounded by the number of distinct event names in the project.
+
+#### Which of this stage's original claims held
+
+Stated as "no string hashing, no collisions, no allocation". Only the first survived:
+
+- **No string hashing** — delivered, on the enum path. `EventsFor<T>` resolves ids at
+  construction, so publishing never hashes a name again. The raw-string entry points
+  still hash once to resolve, which is unavoidable and correct.
+- **No collisions** — wrong. Interning does not prevent two enums projecting onto the
+  same name; identical names intern to the *same* id, which is the collision, not a
+  fix for it. `[EventEnum(Prefix = "...")]` is what addresses that.
+- **No allocation** — already true before this stage. Names were pre-projected and
+  cached at facade construction, so publishing allocated nothing to begin with.
+
+The honest summary is that Stage 2's *safety* benefit had already been delivered by
+`EventsFor<T>` and `EventRef`; what it adds is the identity being a real value type and
+one less dictionary hash on the hot path.
 
 **Stage 3 — type the payload.** `EventId<TData>`, with
 `Publish<TData>(EventId<TData> id, object sender, TData data)`. A wrong payload

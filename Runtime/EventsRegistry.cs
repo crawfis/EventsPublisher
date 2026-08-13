@@ -29,6 +29,35 @@ namespace CrawfisSoftware.Events
         // values themselves stay per-frame, so Pop() still discards them.
         private static readonly Dictionary<string, EventDelivery> _policies = new Dictionary<string, EventDelivery>();
 
+        // The intern table: event name <-> EventId handle. Handles are one-based so that
+        // default(EventId) is 0 and therefore invalid.
+        private static readonly Dictionary<string, int> _handlesByName = new Dictionary<string, int>(StringComparer.Ordinal);
+        private static readonly List<string> _namesByHandle = new List<string>();
+
+        /// <summary>
+        /// Resolves an event name to its <see cref="EventId"/>, interning it on first use.
+        /// </summary>
+        /// <remarks>Costs one dictionary lookup. Publishing or subscribing through the returned id
+        /// costs none, which is the point: <see cref="EventsFor{T}"/> resolves each member of an enum
+        /// family once and never hashes a name again.</remarks>
+        public static EventId Intern(string eventName)
+        {
+            if (string.IsNullOrEmpty(eventName)) return default;
+            if (_handlesByName.TryGetValue(eventName, out int handle)) return new EventId(handle);
+
+            _namesByHandle.Add(eventName);
+            handle = _namesByHandle.Count;              // one-based
+            _handlesByName[eventName] = handle;
+            return new EventId(handle);
+        }
+
+        /// <summary>Gets the name an <see cref="EventId"/> was interned from.</summary>
+        internal static string GetInternedName(EventId eventId)
+        {
+            int handle = eventId.Handle;
+            return handle == 0 ? null : _namesByHandle[handle - 1];
+        }
+
         /// <summary>
         /// Number of retained entries after which a <see cref="EventDelivery.Replay"/> journal is
         /// reported as growing without bound. Reported, never truncated — a silent cap would read as
@@ -160,6 +189,10 @@ namespace CrawfisSoftware.Events
             _resetHandlers.Clear();
             _claimedPrefixes.Clear();
             _policies.Clear();
+            // The intern table is deliberately NOT cleared. Handles are values that callers may still
+            // hold; recycling them would silently repoint an EventId at a different event. It is bounded
+            // by the number of distinct event names in the project, so letting it persist costs nothing.
+
         }
 
         /// <summary>

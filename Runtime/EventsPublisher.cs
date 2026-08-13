@@ -7,7 +7,7 @@ namespace CrawfisSoftware.Events
     /// The EventsPublisher is a singleton that manages event publishing and subscription.
     /// It allows for nested publishers, enabling a stack-like behavior for event management.
     /// </summary>
-    public class EventsPublisher : IStackEventsPublisher<string>
+    public class EventsPublisher : IStackEventsPublisher<string>, IEventIdPublisher
     {
         /// <summary>
         /// Gets the singleton instance of the <see cref="IStackEventsPublisher{T}"/> for publishing stack events.
@@ -62,18 +62,60 @@ namespace CrawfisSoftware.Events
         public void PublishEvent(string eventName, object sender, object data)
         {
             if (StrictMode) WarnIfUnregistered(eventName, sender);
+            PublishResolved(EventsRegistry.Intern(eventName), eventName, sender, data);
+        }
 
+        /// <inheritdoc/>
+        public void PublishEvent(EventId eventId, object sender, object data)
+        {
+            if (StrictMode) WarnIfUnregistered(eventId.Name, sender);
+            PublishResolved(eventId, eventId.Name, sender, data);
+        }
+
+        private void PublishResolved(EventId eventId, string eventName, object sender, object data)
+        {
             // Dispatch to every frame so subscribers underneath still hear it, but retain only on the
             // frame that is top at publish time. A Stack<T> enumerates top-down, so the first is Peek().
             bool isTopFrame = true;
             foreach (IEventsPublisher<string> publisher in _eventsPublishers)
             {
                 if (publisher is EventsPublisherInternal internalPublisher)
-                    internalPublisher.PublishEvent(eventName, sender, data, isTopFrame);
+                    internalPublisher.PublishEvent(eventId, sender, data, isTopFrame);
                 else
                     publisher.PublishEvent(eventName, sender, data);
                 isTopFrame = false;
             }
+        }
+
+        /// <inheritdoc/>
+        public void RegisterEvent(EventId eventId)
+        {
+            if (_eventsPublishers.Peek() is IEventIdPublisher idPublisher) idPublisher.RegisterEvent(eventId);
+        }
+
+        /// <inheritdoc/>
+        public void SubscribeToEvent(EventId eventId, Action<string, object, object> callback)
+        {
+            if (_eventsPublishers.Peek() is IEventIdPublisher idPublisher) idPublisher.SubscribeToEvent(eventId, callback);
+        }
+
+        /// <inheritdoc/>
+        public void UnsubscribeToEvent(EventId eventId, Action<string, object, object> callback)
+        {
+            if (_eventsPublishers.Peek() is IEventIdPublisher idPublisher) idPublisher.UnsubscribeToEvent(eventId, callback);
+        }
+
+        /// <inheritdoc/>
+        public bool TryGetLast(EventId eventId, out object sender, out object data)
+        {
+            foreach (IEventsPublisher<string> publisher in _eventsPublishers)
+            {
+                if (publisher is IEventIdPublisher idPublisher && idPublisher.TryGetLast(eventId, out sender, out data))
+                    return true;
+            }
+            sender = null;
+            data = null;
+            return false;
         }
 
         /// <summary>

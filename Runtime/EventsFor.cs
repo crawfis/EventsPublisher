@@ -118,6 +118,17 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
+        /// Gets the interned identity for <paramref name="eventEnum"/>, resolved once at construction.
+        /// </summary>
+        /// <remarks>Hold this to publish or subscribe without the publisher looking the name up. The
+        /// enum path already uses it internally, so this is for code that wants to pass the identity
+        /// around rather than the enum.</remarks>
+        public static EventId GetEventId(T eventEnum)
+        {
+            return Facade.GetEventId(eventEnum);
+        }
+
+        /// <summary>
         /// Gets the published event name for <paramref name="eventEnum"/>.
         /// </summary>
         public static string GetEventName(T eventEnum)

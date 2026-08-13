@@ -18,6 +18,13 @@ namespace CrawfisSoftware.Events
         private readonly Dictionary<T, string> _eventEnumToStringMap = new Dictionary<T, string>();
         private readonly Dictionary<string, T> _eventStringToEnumMap = new Dictionary<string, T>();
 
+        // Resolved once at construction. Publishing and subscribing through these skips the name lookup
+        // entirely, which is the point of interning.
+        private readonly Dictionary<T, EventId> _eventEnumToIdMap = new Dictionary<T, EventId>();
+
+        // Null when an injected publisher predates IEventIdPublisher; the string path still works.
+        private readonly IEventIdPublisher _idPublisher;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="EventsPublisherEnums"/> class with the specified events Enum/EnumName
         /// publisher.
@@ -28,6 +35,7 @@ namespace CrawfisSoftware.Events
         public EventsPublisherEnums(IEventsPublisher<string> eventsPublisher)
         {
             _eventsPublisher = eventsPublisher;
+            _idPublisher = eventsPublisher as IEventIdPublisher;
             var enumType = typeof(T);
             string enumName = EventsRegistry.GetPrefix(enumType);
             EventsRegistry.ClaimPrefix(enumName, enumType);
@@ -36,6 +44,7 @@ namespace CrawfisSoftware.Events
                 string eventName = enumName + "/" + eventEnum.ToString();
                 _eventEnumToStringMap[eventEnum] = eventName;
                 _eventStringToEnumMap[eventName] = eventEnum;
+                _eventEnumToIdMap[eventEnum] = EventsRegistry.Intern(eventName);
             }
             // Before any publish can happen through this facade, so the first publish is retained.
             DeclareDeliveryPolicies(enumType);
@@ -47,6 +56,12 @@ namespace CrawfisSoftware.Events
         public string GetEventName(T eventEnum)
         {
             return _eventEnumToStringMap[eventEnum];
+        }
+
+        /// <summary>Gets the interned identity for <paramref name="eventEnum"/>.</summary>
+        public EventId GetEventId(T eventEnum)
+        {
+            return _eventEnumToIdMap[eventEnum];
         }
 
         /// <summary>
@@ -78,8 +93,8 @@ namespace CrawfisSoftware.Events
         /// <param name="data">The data associated with the event. This can be any object containing information relevant to the event.</param>
         public void PublishEvent(T eventEnum, object sender, object data)
         {
-            string eventName = _eventEnumToStringMap[eventEnum];
-            _eventsPublisher.PublishEvent(eventName, sender, data);
+            if (_idPublisher != null) _idPublisher.PublishEvent(_eventEnumToIdMap[eventEnum], sender, data);
+            else _eventsPublisher.PublishEvent(_eventEnumToStringMap[eventEnum], sender, data);
         }
 
         /// <summary>
@@ -94,8 +109,8 @@ namespace CrawfisSoftware.Events
         /// an <see cref="object"/>.</param>
         public void SubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            string eventName = _eventEnumToStringMap[eventEnum];
-            _eventsPublisher.SubscribeToEvent(eventName, callback);
+            if (_idPublisher != null) _idPublisher.SubscribeToEvent(_eventEnumToIdMap[eventEnum], callback);
+            else _eventsPublisher.SubscribeToEvent(_eventEnumToStringMap[eventEnum], callback);
         }
 
         /// <summary>
@@ -108,8 +123,8 @@ namespace CrawfisSoftware.Events
         /// the event is triggered.</param>
         public void UnsubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            string eventName = _eventEnumToStringMap[eventEnum];
-            _eventsPublisher.UnsubscribeToEvent(eventName, callback);
+            if (_idPublisher != null) _idPublisher.UnsubscribeToEvent(_eventEnumToIdMap[eventEnum], callback);
+            else _eventsPublisher.UnsubscribeToEvent(_eventEnumToStringMap[eventEnum], callback);
         }
 
         internal void RegisterKnownEvents()
@@ -145,6 +160,7 @@ namespace CrawfisSoftware.Events
         /// </summary>
         public bool TryGetLast(T eventEnum, out object sender, out object data)
         {
+            if (_idPublisher != null) return _idPublisher.TryGetLast(_eventEnumToIdMap[eventEnum], out sender, out data);
             return _eventsPublisher.TryGetLast(_eventEnumToStringMap[eventEnum], out sender, out data);
         }
     }

@@ -4,10 +4,12 @@ using System.Linq;
 
 namespace CrawfisSoftware.Events
 {
-    internal class EventsPublisherInternal : IEventsPublisher<string>
+    internal class EventsPublisherInternal : IEventsPublisher<string>, IEventIdPublisher
     {
         // Define the events that occur in the game
-        private readonly Dictionary<string, Action<string, object, object>> events = new Dictionary<string, Action<string, object, object>>();
+        // Keyed on the interned EventId rather than the name: an int compare per lookup instead of a
+        // string hash, and the name is still what every callback receives.
+        private readonly Dictionary<EventId, Action<string, object, object>> events = new Dictionary<EventId, Action<string, object, object>>();
         private readonly List<Action<string, object, object>> allSubscribers = new List<Action<string, object, object>>();
         private Queue<(string eventName, Action<string, object, object> callback, object sender, object data)> _callbackQueue
             = new Queue<(string eventName, Action<string, object, object> callback, object sender, object data)>();
@@ -20,8 +22,8 @@ namespace CrawfisSoftware.Events
         // Retained values, per policy. These are per-frame by design: the policy registry is
         // stack-global, but what was actually published lives in the frame it was published into, so
         // Pop() discards it.
-        private readonly Dictionary<string, RetainedValue> _stickyValues = new Dictionary<string, RetainedValue>();
-        private readonly Dictionary<string, List<RetainedValue>> _journals = new Dictionary<string, List<RetainedValue>>();
+        private readonly Dictionary<EventId, RetainedValue> _stickyValues = new Dictionary<EventId, RetainedValue>();
+        private readonly Dictionary<EventId, List<RetainedValue>> _journals = new Dictionary<EventId, List<RetainedValue>>();
 
         /// <summary>A published <c>(sender, data)</c> pair held for later delivery.</summary>
         private readonly struct RetainedValue
@@ -37,10 +39,16 @@ namespace CrawfisSoftware.Events
 
         public void RegisterEvent(string eventName)
         {
-            if (string.IsNullOrEmpty(eventName)) return;
-            if (!events.ContainsKey(eventName))
+            RegisterEvent(EventsRegistry.Intern(eventName));
+        }
+
+        /// <inheritdoc/>
+        public void RegisterEvent(EventId eventId)
+        {
+            if (!eventId.IsValid) return;
+            if (!events.ContainsKey(eventId))
             {
-                events.Add(eventName, NullCallback);
+                events.Add(eventId, NullCallback);
             }
         }
         /// <inheritdoc/>
@@ -52,10 +60,16 @@ namespace CrawfisSoftware.Events
 
         public void SubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
-            if (string.IsNullOrEmpty(eventName) || callback == null) return;
-            RegisterEvent(eventName);
-            events[eventName] += callback;
-            ReplayTo(eventName, callback);
+            SubscribeToEvent(EventsRegistry.Intern(eventName), callback);
+        }
+
+        /// <inheritdoc/>
+        public void SubscribeToEvent(EventId eventId, Action<string, object, object> callback)
+        {
+            if (!eventId.IsValid || callback == null) return;
+            RegisterEvent(eventId);
+            events[eventId] += callback;
+            ReplayTo(eventId, callback);
         }
 
         /// <summary>
@@ -71,17 +85,18 @@ namespace CrawfisSoftware.Events
         /// inside a handler — while a drain is already in progress — enqueues and runs in order rather
         /// than nesting.</para>
         /// </remarks>
-        private void ReplayTo(string eventName, Action<string, object, object> callback)
+        private void ReplayTo(EventId eventId, Action<string, object, object> callback)
         {
+            string eventName = eventId.Name;
             switch (EventsRegistry.GetPolicy(eventName))
             {
                 case EventDelivery.Sticky:
-                    if (_stickyValues.TryGetValue(eventName, out RetainedValue retained))
+                    if (_stickyValues.TryGetValue(eventId, out RetainedValue retained))
                         _callbackQueue.Enqueue((eventName, callback, retained.Sender, retained.Data));
                     break;
 
                 case EventDelivery.Replay:
-                    if (_journals.TryGetValue(eventName, out List<RetainedValue> journal))
+                    if (_journals.TryGetValue(eventId, out List<RetainedValue> journal))
                         for (int i = 0; i < journal.Count; i++)
                             _callbackQueue.Enqueue((eventName, callback, journal[i].Sender, journal[i].Data));
                     break;
@@ -95,19 +110,19 @@ namespace CrawfisSoftware.Events
         /// <summary>
         /// Records a published value according to the event's delivery policy.
         /// </summary>
-        private void Retain(string eventName, object sender, object data)
+        private void Retain(EventId eventId, string eventName, object sender, object data)
         {
             switch (EventsRegistry.GetPolicy(eventName))
             {
                 case EventDelivery.Sticky:
-                    _stickyValues[eventName] = new RetainedValue(sender, data);
+                    _stickyValues[eventId] = new RetainedValue(sender, data);
                     break;
 
                 case EventDelivery.Replay:
-                    if (!_journals.TryGetValue(eventName, out List<RetainedValue> journal))
+                    if (!_journals.TryGetValue(eventId, out List<RetainedValue> journal))
                     {
                         journal = new List<RetainedValue>();
-                        _journals[eventName] = journal;
+                        _journals[eventId] = journal;
                     }
                     journal.Add(new RetainedValue(sender, data));
                     // Reported, never truncated: a silent cap would read as "everything was replayed".
@@ -127,15 +142,21 @@ namespace CrawfisSoftware.Events
         /// </summary>
         public bool TryGetLast(string eventName, out object sender, out object data)
         {
-            if (!string.IsNullOrEmpty(eventName))
+            return TryGetLast(EventsRegistry.Intern(eventName), out sender, out data);
+        }
+
+        /// <inheritdoc/>
+        public bool TryGetLast(EventId eventId, out object sender, out object data)
+        {
+            if (eventId.IsValid)
             {
-                if (_stickyValues.TryGetValue(eventName, out RetainedValue retained))
+                if (_stickyValues.TryGetValue(eventId, out RetainedValue retained))
                 {
                     sender = retained.Sender;
                     data = retained.Data;
                     return true;
                 }
-                if (_journals.TryGetValue(eventName, out List<RetainedValue> journal) && journal.Count > 0)
+                if (_journals.TryGetValue(eventId, out List<RetainedValue> journal) && journal.Count > 0)
                 {
                     sender = journal[journal.Count - 1].Sender;
                     data = journal[journal.Count - 1].Data;
@@ -149,9 +170,15 @@ namespace CrawfisSoftware.Events
 
         public void UnsubscribeToEvent(string eventName, Action<string, object, object> callback)
         {
-            if (string.IsNullOrEmpty(eventName) || callback == null) return;
-            if (events.ContainsKey(eventName))
-                events[eventName] -= callback;
+            UnsubscribeToEvent(EventsRegistry.Intern(eventName), callback);
+        }
+
+        /// <inheritdoc/>
+        public void UnsubscribeToEvent(EventId eventId, Action<string, object, object> callback)
+        {
+            if (!eventId.IsValid || callback == null) return;
+            if (events.ContainsKey(eventId))
+                events[eventId] -= callback;
         }
 
         /// <summary>
@@ -159,7 +186,8 @@ namespace CrawfisSoftware.Events
         /// </summary>
         internal bool IsEventRegistered(string eventName)
         {
-            return !string.IsNullOrEmpty(eventName) && events.ContainsKey(eventName);
+            EventId eventId = EventsRegistry.Intern(eventName);
+            return eventId.IsValid && events.ContainsKey(eventId);
         }
 
         public void SubscribeToAllEvents(Action<string, object, object> callback)
@@ -174,7 +202,13 @@ namespace CrawfisSoftware.Events
 
         public void PublishEvent(string eventName, object sender, object data)
         {
-            PublishEvent(eventName, sender, data, retain: true);
+            PublishEvent(EventsRegistry.Intern(eventName), sender, data, retain: true);
+        }
+
+        /// <inheritdoc/>
+        public void PublishEvent(EventId eventId, object sender, object data)
+        {
+            PublishEvent(eventId, sender, data, retain: true);
         }
 
         /// <summary>
@@ -184,13 +218,14 @@ namespace CrawfisSoftware.Events
         /// frames still hear it, but retains only on the frame that was top at publish time. Retaining
         /// on every frame would mean <c>Pop()</c> discarded nothing, since the value would also be
         /// sitting in the frames underneath.</remarks>
-        internal void PublishEvent(string eventName, object sender, object data, bool retain)
+        internal void PublishEvent(EventId eventId, object sender, object data, bool retain)
         {
-            if (string.IsNullOrEmpty(eventName)) return;
+            if (!eventId.IsValid) return;
 
-            if (retain) Retain(eventName, sender, data);
+            string eventName = eventId.Name;
+            if (retain) Retain(eventId, eventName, sender, data);
 
-            if (events.TryGetValue(eventName, out Action<string, object, object> eventDelegate))
+            if (events.TryGetValue(eventId, out Action<string, object, object> eventDelegate))
             {
                 var callbacks = eventDelegate.GetInvocationList();
 
@@ -243,18 +278,18 @@ namespace CrawfisSoftware.Events
 
         public IEnumerable<string> GetRegisteredEvents()
         {
-            return events.Keys;
+            foreach (EventId eventId in events.Keys) yield return eventId.Name;
         }
 
         public IEnumerable<(string eventName, string typeName)> GetSubscribers()
         {
-            foreach (var eventName in events.Keys)
+            foreach (var eventId in events.Keys)
             {
-                if (events.TryGetValue(eventName, out var eventDelegate) && eventDelegate != null)
+                if (events.TryGetValue(eventId, out var eventDelegate) && eventDelegate != null)
                 {
                     foreach (var handler in eventDelegate.GetInvocationList().Skip(1))
                     {
-                        yield return (eventName, handler.Method.DeclaringType.ToString());
+                        yield return (eventId.Name, handler.Method.DeclaringType.ToString());
                     }
                 }
             }
