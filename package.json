@@ -17,12 +17,5 @@
   "changelogUrl": "https://github.com/crawfis/eventspublisher/releases",
   "licensesUrl": "https://github.com/crawfis/eventspublisher/blob/main/LICENSE",
   "dependencies": {
-  },
-  "samples": [
-    {
-      "displayName": "Basic Usage",
-      "description": "Minimal scene and scripts demonstrating publish/subscribe setup.",
-      "path": "Samples~/Basic Usage"
-    }
-  ]
+  }
 }

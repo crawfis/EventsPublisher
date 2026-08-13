@@ -190,7 +190,7 @@ namespace CrawfisSoftware.Events.Editor
             foreach (Type type in input.SingletonSubclasses)
             {
                 if (type == null) continue;
-                bool ordered = type.IsDefined(typeof(UnityEngine.DefaultExecutionOrderAttribute), false);
+                bool ordered = type.IsDefined(typeof(UnityEngine.DefaultExecutionOrder), false);
                 details.Add(type.FullName + (ordered ? "  [DefaultExecutionOrder]" : ""));
             }
 
