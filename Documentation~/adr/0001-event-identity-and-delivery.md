@@ -1,6 +1,6 @@
 # ADR 0001 — Event Identity and Delivery Timing
 
-**Status:** Decision 1 — Stages 0 and 2 implemented, Stage 1 revised, Stage 3 outstanding.
+**Status:** Decision 1 — Stages 0, 2 and 3 implemented, Stage 1 revised.
 Decision 2 implemented (`EventsFor<T>`, `Transient`/`Sticky`/`Replay`, immediate replay,
 `TryGetLast`).
 **Date:** 2026-08-12
@@ -181,14 +181,114 @@ The honest summary is that Stage 2's *safety* benefit had already been delivered
 `EventsFor<T>` and `EventRef`; what it adds is the identity being a real value type and
 one less dictionary hash on the hot path.
 
-**Stage 3 — type the payload.** `EventId<TData>`, with
-`Publish<TData>(EventId<TData> id, object sender, TData data)`. A wrong payload
-becomes a compile error rather than an `InvalidCastException` inside a swallowed
-callback. Erased subscribers still receive `object`, so the logger, `EventHistory`,
-and the editor menus do not change.
+**Stage 3 — type the payload. IMPLEMENTED.** `object data` was the larger of the two
+hazards: a typo'd key fails loudly once Stage 0 lands, whereas a wrong payload cast
+fails inside a handler, where `Drain` catches it and logs an exception naming neither
+the event's expected type nor who published it.
 
-`object data` is the larger hazard of the two — a typo'd key fails loudly once
-Stage 0 lands, whereas a wrong payload cast fails inside a handler.
+`EventId<TData>` is an `EventId` that also carries the payload type.
+`[EventPayload(typeof(X))]` declares that type on the enum member, next to
+`[EventDelivery]`, read once at facade construction.
+
+```csharp
+[EventEnum]
+public enum TempleRunEvents
+{
+    [EventPayload(typeof(PlayerFailedData))]
+    [EventDelivery(EventDelivery.Sticky)]
+    PlayerFailed,
+}
+
+private static readonly EventId<PlayerFailedData> Failed =
+    EventsFor<TempleRunEvents>.Id<PlayerFailedData>(TempleRunEvents.PlayerFailed);
+
+void OnEnable()  => Failed.Subscribe(OnPlayerFailed);
+void OnDisable() => Failed.Unsubscribe(OnPlayerFailed);
+
+private void OnPlayerFailed(string eventName, object sender, PlayerFailedData data) { }
+```
+
+#### What is a compile error, and what is not
+
+The claim this stage was written against — "a wrong payload becomes a compile error" —
+is true only downstream of one point, and the design is worth stating precisely.
+
+Once a call site holds an `EventId<TData>`, publishing the wrong payload and writing a
+handler with the wrong parameter type are both compile errors. There is no cast to get
+wrong, and no `object` in the handler signature to quietly accept anything.
+
+The exception is the place the type argument is *written*: `EventsFor<T>.Id<TData>` or
+`EventId<TData>.Of`. Nothing stops two call sites writing different type arguments for
+the same event, and no compiler can catch it, because each one is internally consistent.
+That single point is checked at runtime instead — the registry records the declared
+payload type, first declaration wins, and a differing one is an error naming both types.
+Declared in a `static readonly` field, that check runs once at type initialization.
+
+So the accurate statement is: **the type argument is written once and checked at
+startup; every use of it afterwards is checked by the compiler.**
+
+#### The check that earns its keep
+
+The residual hole is an *untyped* publish — a raw string, an Inspector-authored
+`EventRef`, or an enum through the erased overload — handing a typed subscriber
+something it cannot use. That is not hypothetical for a migrating project; it is most
+of RunnerUGSTemplate.
+
+Two things catch it, and the first matters more:
+
+- **At the publisher**, under `StrictMode`: the payload is tested against the
+  declaration and a mismatch names the event, the expected type, the actual type, and
+  **the sender**. One report per publish.
+- **At the wrapper** around each typed handler: the handler is skipped rather than
+  handed a value it cannot use, and the mismatch is reported. This fires even outside
+  `StrictMode`, but it cannot name the publisher — by then the sender is gone.
+
+Neither throws. A cast exception from inside a handler is already caught and logged by
+`Drain`; the only thing it adds over a plain error is a stack trace pointing at the
+handler, which is the one party not at fault.
+
+#### Erasure is preserved
+
+A typed publish reaches untyped subscribers of the same name, and an untyped publish
+reaches typed handlers. The typed API is a view onto the same event, not a parallel
+channel — if it were separate, every unmigrated subscriber would silently stop hearing
+migrated publishes. `SubscribeToAllEvents` still receives `object`, so the global
+logger, `EventHistory` and the editor menus see typed events without changing. Both
+directions are tested.
+
+#### Design notes
+
+- **No declaration means no checking.** An event with no `[EventPayload]` and no typed
+  identity behaves exactly as it did before this stage. Anything else would start
+  reporting every event in a project that has declared nothing.
+- **`typeof(object)` means "anything goes"**, declared explicitly rather than by
+  omission.
+- **Null is legal for a reference or nullable payload, and an error for a bare value
+  type.** Handing an `int` handler `default(int)` for a missing payload is the worst
+  outcome available — a missing score read as a real zero — so it is reported and the
+  handler skipped. The rule has one definition, `EventsRegistry.AcceptsNull`, called by
+  both the publish-time check and the wrapper. Two copies would eventually disagree
+  about whether a null is legal, and one would report what the other delivered.
+- **Typed handlers are wrapped, and the wrappers are remembered.** A typed
+  `Action<string, object, TData>` cannot be handed to the publisher directly, so it is
+  wrapped in an erased delegate. The wrapper is a new object each time it is built, so
+  rebuilding one at unsubscribe would hand `-=` a delegate matching nothing and leave
+  the handler subscribed forever. `TypedSubscriptions` keys them on
+  `(EventId, handler)` and reference-counts them, so subscribing twice fires twice and
+  takes two unsubscribes — the semantics untyped `+=` and `-=` already have. The table
+  is cleared on reset, or wrappers would leak across play sessions.
+- **`EventId<TData>` carries no operations.** Publish, subscribe, unsubscribe and
+  `TryGetLast` are extension methods, so the struct stays a pure identity with no
+  dependency on a particular publisher. Each has an overload taking an explicit
+  publisher for a pushed frame or an injected one.
+- **Nothing was added to `IEventsPublisher<T>`**, so no existing implementer changes.
+
+#### What this does not fix
+
+An event with no declared payload is still unchecked, and there is no way to require a
+declaration — adding one would break every existing event. The typed API is opt-in per
+event, which is what makes it adoptable incrementally, and also what leaves the
+undeclared majority exactly as hazardous as before.
 
 ### Rejected for now
 
@@ -594,22 +694,33 @@ consumers continue to compile.
 
 ### Tests
 
-`Tests/Editor` holds 31 EditMode tests across three fixtures, covering dispatch ordering
-and isolation, the static facade and its registration timing, and all three delivery
-policies. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
+`Tests/Editor` holds 80 EditMode tests across seven fixtures, covering dispatch ordering
+and isolation, the static facade and its registration timing, all three delivery
+policies, the interned identity, the Inspector catalog and `EventRef`, and typed
+payloads. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
 test can reset `EventsRegistry`'s static state — a public reset would be a footgun in
 game code.
 
-The suite was mutation-checked rather than merely observed green: retaining on every
-frame instead of the top one, firing sticky replay inline instead of through the queue,
-and dropping the null-name guard each fail exactly the test written for that behaviour.
+The suite is mutation-checked rather than merely observed green. Each of these was
+introduced deliberately and fails exactly the tests written for it: retaining on every
+frame instead of the top one; firing sticky replay inline instead of through the queue;
+dropping the null-name guard; zero-based `EventId` handles; clearing the intern table on
+reset; rebuilding a typed handler's wrapper at unsubscribe; skipping the publish-time and
+declaration-time payload checks; and delivering a mismatched payload anyway.
+
+Two mutations initially failed *nothing*, and both were treated as coverage gaps rather
+than written off. Removing the unset-`EventRef` guard from the extension methods changed
+no behaviour, because the publisher already rejects null names — the code comment was
+corrected to say so rather than keep a claim no test supported. Accepting null for any
+payload type went unnoticed because no test subscribed a *value*-typed handler and sent
+it null; two tests were added, and the mutation now fails three.
 
 Consumers must add the package to `testables` in `Packages/manifest.json` for Unity to
 build them.
 
 ### Not addressed
 
-Stages 1–3 and Decision 2 are design only. No delivery policy is implemented.
+Stage 1 is revised design only — see *Staged path*. Nothing else outstanding.
 
 ### Unrelated defects noticed
 
@@ -652,7 +763,17 @@ Not fixed here; they are not identity or timing problems.
    unblocks Stage 1 and reopens `Type.FullName` (see *Rejected for now*).
 6. **`Replay` policy** — in scope. All three policies ship: `Transient`, `Sticky`,
    `Replay`.
-7. **Sticky reset granularity** — no `Invalidate(name)`. `Pop()` and `Clear()` are
+7. **Typed payloads are opt-in, per event.** `[EventPayload(typeof(X))]` declares the
+   type; an event without one stays unchecked. Requiring a declaration would break
+   every existing event, and defaulting undeclared events to "carries nothing" would
+   report most of a real project on day one. The cost is that the undeclared majority
+   is exactly as hazardous as before, which is accepted so that migration can be
+   incremental. See *Stage 3*.
+8. **A payload mismatch is reported, not thrown.** `Drain` already catches and logs
+   whatever a handler throws, so throwing would add only a stack trace pointing at the
+   handler — the one party not at fault. The publish-time report names the sender
+   instead, which is the part needed to find the bug. See *Stage 3*.
+9. **Sticky reset granularity** — no `Invalidate(name)`. `Pop()` and `Clear()` are
    the only reset mechanisms. Retained values are expected to stay valid across
    scene boundaries, and the publisher stack provides the scoping where they should
    not. See *Sticky reset granularity* below.

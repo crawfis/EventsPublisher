@@ -66,6 +66,51 @@ is registered by that first touch.
 A `Replay` journal grows for as long as its publisher frame lives. Scope it by pushing a
 publisher frame when the owning scene loads and popping it on unload.
 
+## Typed payloads
+
+`data` is an `object`, so a handler that casts it wrongly fails at runtime, inside the
+handler, with nothing naming what the event was supposed to carry. Declare the payload
+type and the compiler checks it instead:
+
+```csharp
+[EventEnum]
+public enum TempleRunEvents
+{
+    [EventPayload(typeof(PlayerFailedData))]
+    [EventDelivery(EventDelivery.Sticky)]
+    PlayerFailed,
+}
+
+// Resolve once. Everything downstream of this line is compiler-checked.
+private static readonly EventId<PlayerFailedData> Failed =
+    EventsFor<TempleRunEvents>.Id<PlayerFailedData>(TempleRunEvents.PlayerFailed);
+
+private void OnEnable()  => Failed.Subscribe(OnPlayerFailed);
+private void OnDisable() => Failed.Unsubscribe(OnPlayerFailed);
+
+// No cast, and a wrong parameter type will not compile.
+private void OnPlayerFailed(string eventName, object sender, PlayerFailedData data) { }
+
+private void Fail() => Failed.Publish(this, new PlayerFailedData(...));
+```
+
+The type argument is written once, in the `static readonly` field, and checked against
+the attribute at startup. Two call sites declaring different types for the same event is
+the one mistake the compiler cannot catch, so it is reported the moment the second one
+is minted.
+
+Adoption is per event and both directions keep working: a typed publish reaches existing
+untyped subscribers, an untyped publish reaches typed handlers, and `SubscribeToAllEvents`
+still receives `object`, so the global logger and event history do not change.
+
+An untyped publish carrying the wrong payload is reported at the publisher — naming the
+event, the expected type, the actual type, and the sender — and typed handlers are
+skipped rather than handed a value they cannot use. An event with no `[EventPayload]` is
+unchecked, exactly as before.
+
+Use `EventId<TData>.Of("Some/Name")` for a name no enum can annotate. `typeof(object)`
+declares an intentionally untyped payload.
+
 ## Authoring event names in the Inspector
 
 Scene data has no compile step, so a plain `[SerializeField] string` event name has no check
@@ -111,7 +156,8 @@ renames every one of its events and breaks any name already serialized.
 `EventsPublisher.StrictMode` — on by default in the editor and development builds —
 reports publishing an event name no frame has registered. Without it, a misspelled name
 reaches no subscriber while still notifying "all events" subscribers, so the logger
-prints it and the system looks healthy.
+prints it and the system looks healthy. It also reports a publish whose payload is not
+what the event declared it carries, naming the sender.
 
 ## Running the tests
 

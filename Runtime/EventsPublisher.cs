@@ -74,6 +74,8 @@ namespace CrawfisSoftware.Events
 
         private void PublishResolved(EventId eventId, string eventName, object sender, object data)
         {
+            if (StrictMode) WarnIfPayloadMismatch(eventId, eventName, sender, data);
+
             // Dispatch to every frame so subscribers underneath still hear it, but retain only on the
             // frame that is top at publish time. A Stack<T> enumerates top-down, so the first is Peek().
             bool isTopFrame = true;
@@ -137,6 +139,30 @@ namespace CrawfisSoftware.Events
             UnityEngine.Debug.LogError(
                 $"EventsPublisher: '{eventName}' was published by {sender} but is not registered, so no subscriber will receive it. " +
                 "Check for a misspelled event name. Set EventsPublisher.StrictMode = false to silence this.");
+        }
+
+        /// <summary>
+        /// Reports a publish whose payload is not what the event declared it carries.
+        /// </summary>
+        /// <remarks>
+        /// <para>A publish through <see cref="EventId{TData}"/> cannot be wrong — the compiler saw to
+        /// that — so this exists for the publishes that are still untyped: a raw string, an
+        /// Inspector-authored <see cref="EventRef"/>, or an enum published through the erased overload.
+        /// Those are the ones that can hand a typed subscriber something it cannot use.</para>
+        /// <para>Reported at the publisher, naming the sender, rather than once per subscriber. The
+        /// wrapper around a typed handler reports the same mismatch, but by then the publisher is gone
+        /// and the message can only say which handler was skipped, not who is at fault.</para>
+        /// <para>Costs one dictionary lookup per publish, and only in <see cref="StrictMode"/>.</para>
+        /// </remarks>
+        private void WarnIfPayloadMismatch(EventId eventId, string eventName, object sender, object data)
+        {
+            if (EventsRegistry.IsPayloadAssignable(eventId, data, out Type declared)) return;
+
+            string actual = data == null ? "null" : data.GetType().FullName;
+            UnityEngine.Debug.LogError(
+                $"EventsPublisher: '{eventName}' was published by {sender} with a payload of {actual}, but it is " +
+                $"declared to carry {declared.FullName}. Subscribers typed to that payload will be skipped. " +
+                "Set EventsPublisher.StrictMode = false to silence this.");
         }
 
         /// <inheritdoc/>

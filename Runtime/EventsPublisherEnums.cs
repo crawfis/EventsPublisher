@@ -47,7 +47,7 @@ namespace CrawfisSoftware.Events
                 _eventEnumToIdMap[eventEnum] = EventsRegistry.Intern(eventName);
             }
             // Before any publish can happen through this facade, so the first publish is retained.
-            DeclareDeliveryPolicies(enumType);
+            DeclareMemberMetadata(enumType);
         }
 
         /// <summary>
@@ -62,6 +62,19 @@ namespace CrawfisSoftware.Events
         public EventId GetEventId(T eventEnum)
         {
             return _eventEnumToIdMap[eventEnum];
+        }
+
+        /// <summary>
+        /// Gets the identity for <paramref name="eventEnum"/> typed to the payload it carries.
+        /// </summary>
+        /// <remarks>When the member declares an <see cref="EventPayloadAttribute"/>, this is where
+        /// <typeparamref name="TData"/> is checked against it — a mismatch is reported here, once, at
+        /// the point the type argument was written, rather than as a cast failure inside a handler.</remarks>
+        public EventId<TData> GetEventId<TData>(T eventEnum)
+        {
+            EventId eventId = _eventEnumToIdMap[eventEnum];
+            EventsRegistry.DeclarePayload(eventId, typeof(TData));
+            return new EventId<TData>(eventId);
         }
 
         /// <summary>
@@ -138,20 +151,23 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
-        /// Reads <see cref="EventDeliveryAttribute"/> off each member of <typeparamref name="T"/> and
-        /// declares the policies.
+        /// Reads <see cref="EventDeliveryAttribute"/> and <see cref="EventPayloadAttribute"/> off each
+        /// member of <typeparamref name="T"/> and declares what they say.
         /// </summary>
         /// <remarks>Done once, here, rather than per publish: the reflection cost is paid at
         /// construction and the publisher then does a dictionary lookup per event.</remarks>
-        private void DeclareDeliveryPolicies(Type enumType)
+        private void DeclareMemberMetadata(Type enumType)
         {
             foreach (KeyValuePair<T, string> entry in _eventEnumToStringMap)
             {
                 FieldInfo member = enumType.GetField(entry.Key.ToString(), BindingFlags.Public | BindingFlags.Static);
                 if (member == null) continue;
-                var attribute = (EventDeliveryAttribute)Attribute.GetCustomAttribute(member, typeof(EventDeliveryAttribute));
-                if (attribute == null) continue;
-                EventsRegistry.DeclarePolicy(entry.Value, attribute.Delivery);
+
+                var delivery = (EventDeliveryAttribute)Attribute.GetCustomAttribute(member, typeof(EventDeliveryAttribute));
+                if (delivery != null) EventsRegistry.DeclarePolicy(entry.Value, delivery.Delivery);
+
+                var payload = (EventPayloadAttribute)Attribute.GetCustomAttribute(member, typeof(EventPayloadAttribute));
+                if (payload != null) EventsRegistry.DeclarePayload(_eventEnumToIdMap[entry.Key], payload.PayloadType);
             }
         }
 

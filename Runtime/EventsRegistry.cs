@@ -34,6 +34,10 @@ namespace CrawfisSoftware.Events
         private static readonly Dictionary<string, int> _handlesByName = new Dictionary<string, int>(StringComparer.Ordinal);
         private static readonly List<string> _namesByHandle = new List<string>();
 
+        // Declared payload type per event. Keyed on the id rather than the name because this is read on
+        // the publish path under StrictMode, and the id is already resolved by then.
+        private static readonly Dictionary<EventId, Type> _payloadTypes = new Dictionary<EventId, Type>();
+
         /// <summary>
         /// Resolves an event name to its <see cref="EventId"/>, interning it on first use.
         /// </summary>
@@ -109,6 +113,70 @@ namespace CrawfisSoftware.Events
             if (!string.IsNullOrEmpty(eventName) && _policies.TryGetValue(eventName, out EventDelivery policy))
                 return policy;
             return EventDelivery.Transient;
+        }
+
+        /// <summary>
+        /// Declares the payload type an event carries.
+        /// </summary>
+        /// <remarks>
+        /// <para>First declaration wins; a second, differing one is reported and ignored. That report is
+        /// the point of this table — two call sites disagreeing about what an event carries is the one
+        /// failure a typed identity cannot turn into a compile error, so it is turned into a loud error
+        /// at the moment the second one is minted instead.</para>
+        /// <para>Declaring <c>typeof(object)</c> means "anything goes" and disables the publish-time
+        /// check for that event, which is what an event with a genuinely untyped payload wants.</para>
+        /// </remarks>
+        internal static void DeclarePayload(EventId eventId, Type payloadType)
+        {
+            if (!eventId.IsValid || payloadType == null) return;
+
+            if (!_payloadTypes.TryGetValue(eventId, out Type existing))
+            {
+                _payloadTypes[eventId] = payloadType;
+                return;
+            }
+
+            if (existing != payloadType)
+            {
+                Debug.LogError(
+                    $"EventsRegistry: '{eventId.Name}' is already declared to carry {existing.FullName} and " +
+                    $"cannot be redeclared as {payloadType.FullName}. The first declaration is kept, so the " +
+                    "second call site will see payloads it cannot use.");
+            }
+        }
+
+        /// <summary>
+        /// Gets the declared payload type for an event, or <see langword="null"/> when nothing declared one.
+        /// </summary>
+        /// <remarks>Null means unchecked, not "carries nothing" — an event with no
+        /// <see cref="EventPayloadAttribute"/> and no typed identity behaves exactly as it did before
+        /// payloads could be declared.</remarks>
+        public static Type GetPayloadType(EventId eventId)
+        {
+            return _payloadTypes.TryGetValue(eventId, out Type payloadType) ? payloadType : null;
+        }
+
+        /// <summary>
+        /// Tests a payload against an event's declaration, describing the mismatch when there is one.
+        /// </summary>
+        /// <returns><see langword="true"/> when the payload is acceptable, or nothing was declared.</returns>
+        internal static bool IsPayloadAssignable(EventId eventId, object data, out Type declared)
+        {
+            declared = GetPayloadType(eventId);
+            if (declared == null || declared == typeof(object)) return true;
+
+            return data == null ? AcceptsNull(declared) : declared.IsInstanceOfType(data);
+        }
+
+        /// <summary>
+        /// True when <paramref name="payloadType"/> can hold a null payload.
+        /// </summary>
+        /// <remarks>The single definition of that rule. The publish-time check and the wrapper around a
+        /// typed handler both call it, so they cannot disagree about whether a null payload is legal —
+        /// if they did, one would report an event the other delivered as <c>default(TData)</c>.</remarks>
+        internal static bool AcceptsNull(Type payloadType)
+        {
+            return !payloadType.IsValueType || Nullable.GetUnderlyingType(payloadType) != null;
         }
 
         /// <summary>
@@ -189,6 +257,8 @@ namespace CrawfisSoftware.Events
             _resetHandlers.Clear();
             _claimedPrefixes.Clear();
             _policies.Clear();
+            _payloadTypes.Clear();
+            TypedSubscriptions.Clear();
             // The intern table is deliberately NOT cleared. Handles are values that callers may still
             // hold; recycling them would silently repoint an EventId at a different event. It is bounded
             // by the number of distinct event names in the project, so letting it persist costs nothing.

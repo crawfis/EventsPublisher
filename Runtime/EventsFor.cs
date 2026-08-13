@@ -129,6 +129,28 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
+        /// Gets the identity for <paramref name="eventEnum"/> typed to the payload it carries, so that
+        /// publishing and subscribing through it are checked by the compiler.
+        /// </summary>
+        /// <remarks>
+        /// <para>Assign the result to a <c>static readonly</c> field and use that field everywhere. The
+        /// one runtime check — <typeparamref name="TData"/> against the member's
+        /// <see cref="EventPayloadAttribute"/> — then happens once, at type initialization, and every
+        /// call site downstream of it is checked at compile time instead.</para>
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// private static readonly EventId&lt;PlayerFailedData&gt; Failed =
+        ///     EventsFor&lt;TempleRunEvents&gt;.Id&lt;PlayerFailedData&gt;(TempleRunEvents.PlayerFailed);
+        /// </code>
+        /// </example>
+        /// <typeparam name="TData">The payload type, matching the member's <see cref="EventPayloadAttribute"/>.</typeparam>
+        public static EventId<TData> Id<TData>(T eventEnum)
+        {
+            return Facade.GetEventId<TData>(eventEnum);
+        }
+
+        /// <summary>
         /// Gets the published event name for <paramref name="eventEnum"/>.
         /// </summary>
         public static string GetEventName(T eventEnum)
