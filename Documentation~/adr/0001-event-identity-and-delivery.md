@@ -694,7 +694,7 @@ consumers continue to compile.
 
 ### Tests
 
-`Tests/Editor` holds 99 EditMode tests across nine fixtures, covering dispatch ordering
+`Tests/Editor` holds 104 EditMode tests across nine fixtures, covering dispatch ordering
 and isolation, the static facade and its registration timing, all three delivery
 policies, the interned identity, the Inspector catalog and `EventRef`, typed payloads,
 the late-delivery diagnostic, and the upgrade audit's reasoning. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
@@ -720,6 +720,35 @@ report that flags every event is one nobody can act on.
 
 Consumers must add the package to `testables` in `Packages/manifest.json` for Unity to
 build them.
+
+#### The upgrade audit, run against a real project
+
+The audit's *gathering* step cannot be unit tested — it needs `TypeCache`, the asset
+database and a Unity project — so it was run end to end against `EndlessRunnerTemplate`,
+an unmigrated consumer, through a harness that substitutes only the type cache and reads
+everything else (asset YAML, `.cs` sources, the manifest) from the real project on disk.
+
+It found nothing. Every check reported *Ok* on a project that had taken none of the
+steps. Two separate causes:
+
+- **A real defect.** The `testables` check was a substring search over the whole
+  manifest, so it matched the package's own `dependencies` entry — which every consuming
+  project has. It could not have reported "not configured" for any project, ever, and
+  said the package was set up in a manifest with no `testables` key at all. Now scoped to
+  the `testables` array and covered by five tests, including the dependencies-only case
+  and a prefix collision that a later mutation showed was still open.
+- **A harness artifact.** `CollectSerializedStringFields` skips its own assembly, and the
+  probe had compiled the audit and the project's types together. Separating them, as
+  Unity does, was the fix — and it is the more faithful arrangement.
+
+Against the corrected build the audit finds the three event families and their three
+`[DefaultExecutionOrder(-10000)]` singletons, 50 serialized string fields of which 11 are
+event-name candidates, and the two event names actually baked into assets — verified
+against an independent grep of the project, which finds exactly those two.
+
+It also reports `EventHistory._events`, a `[TextArea]` log dump that is not an event name.
+That is the expected cost of the field-name heuristic, and is why asset-confirmed
+findings and name-based guesses are graded differently rather than presented as one list.
 
 ### Not addressed
 

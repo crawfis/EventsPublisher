@@ -19,6 +19,12 @@ contains rather than what a generic guide assumes. Findings are marked:
 - **Suggestion** — a guess, or a judgement the tool cannot make for you.
 - **Ok** — already done.
 
+The distinction is load-bearing for step 3 in particular. A field is reported as an
+Action only when an actual asset holds a known event name in it; a field merely *named*
+like an event name is a Suggestion, and those do produce false positives — a `[TextArea]`
+field called `_events` that holds a log dump will be listed. Read them, do not batch-apply
+them.
+
 Before the last step, enter play mode and run the boot sequence, then refresh again. The
 delivery-policy evidence comes from what actually happened during a run.
 
@@ -35,7 +41,7 @@ Add the package to `testables` in `Packages/manifest.json`:
 { "testables": [ "com.crawfissoftware.eventspublisher" ] }
 ```
 
-Unity only builds a package's tests when the consuming project opts in. 99 EditMode
+Unity only builds a package's tests when the consuming project opts in. 104 EditMode
 tests then appear under **Window > General > Test Runner**. They were verified on a stub
 harness rather than in a real editor, so running them once in a real project is a genuine
 check, not a formality.

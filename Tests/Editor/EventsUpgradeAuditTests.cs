@@ -72,6 +72,52 @@ namespace CrawfisSoftware.Events.Tests
         }
 
         [Test]
+        public void PackageInDependenciesOnly_IsNotListedInTestables()
+        {
+            // The regression this check exists for. A substring search over the whole manifest matches
+            // the package's own dependencies entry, which every consuming project has, so the audit
+            // reported testables as configured in a project whose manifest had no testables key at all.
+            const string manifest = @"{ ""dependencies"": { ""com.crawfissoftware.eventspublisher"": ""https://x.git"" } }";
+
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(manifest, "com.crawfissoftware.eventspublisher"));
+        }
+
+        [Test]
+        public void PackageInTestables_IsListed()
+        {
+            const string manifest = @"{ ""dependencies"": { ""com.crawfissoftware.eventspublisher"": ""https://x.git"" },
+                                        ""testables"": [ ""com.crawfissoftware.eventspublisher"" ] }";
+
+            Assert.IsTrue(EventsUpgradeAudit.IsListedInTestables(manifest, "com.crawfissoftware.eventspublisher"));
+        }
+
+        [Test]
+        public void ADifferentPackageInTestables_IsNotAMatch()
+        {
+            const string manifest = @"{ ""testables"": [ ""com.other.package"" ] }";
+
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(manifest, "com.crawfissoftware.eventspublisher"));
+        }
+
+        [Test]
+        public void APackageWhoseNameIsAPrefixOfAListedOne_IsNotAMatch()
+        {
+            // Matching the bare name rather than the quoted one makes every prefix a false positive.
+            const string manifest = @"{ ""testables"": [ ""com.crawfissoftware.eventspublisher.extras"" ] }";
+
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(manifest, "com.crawfissoftware.eventspublisher"));
+        }
+
+        [Test]
+        public void AMalformedOrAbsentManifest_IsNotListed()
+        {
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(null, "com.x"));
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables("", "com.x"));
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(@"{ ""testables"":", "com.x"));
+            Assert.IsFalse(EventsUpgradeAudit.IsListedInTestables(@"{ ""testables"": [ ""com.x""", "com.x"));
+        }
+
+        [Test]
         public void UnmarkedEventEnum_IsReportedByName()
         {
             var input = new UpgradeAuditInput

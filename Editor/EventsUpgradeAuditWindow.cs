@@ -126,12 +126,7 @@ namespace CrawfisSoftware.Events.Editor
             var found = new List<Type>();
             var seen = new HashSet<Type>();
 
-            void Add(Type type)
-            {
-                if (type != null && type.IsEnum && seen.Add(type)) found.Add(type);
-            }
-
-            foreach (Type type in TypeCache.GetTypesWithAttribute<EventEnumAttribute>()) Add(type);
+            foreach (Type type in TypeCache.GetTypesWithAttribute<EventEnumAttribute>()) AddEnum(found, seen, type);
 
             foreach (Type subclass in singletons)
             {
@@ -139,14 +134,20 @@ namespace CrawfisSoftware.Events.Editor
                 {
                     if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(EventsPublisherEnumsSingleton<>))
                     {
-                        Add(baseType.GetGenericArguments()[0]);
+                        AddEnum(found, seen, baseType.GetGenericArguments()[0]);
                         break;
                     }
                 }
             }
 
-            foreach (string name in ScanSourceForFacadeTypeArguments()) Add(ResolveEnumByName(name));
+            foreach (string name in ScanSourceForFacadeTypeArguments())
+                AddEnum(found, seen, ResolveEnumByName(name));
             return found;
+        }
+
+        private static void AddEnum(List<Type> found, HashSet<Type> seen, Type type)
+        {
+            if (type != null && type.IsEnum && seen.Add(type)) found.Add(type);
         }
 
         private static readonly Regex FacadeUsage =
@@ -260,7 +261,8 @@ namespace CrawfisSoftware.Events.Editor
             try
             {
                 string manifest = Path.Combine(Path.GetDirectoryName(Application.dataPath) ?? ".", "Packages/manifest.json");
-                return File.Exists(manifest) && File.ReadAllText(manifest).Contains(PackageName + "\"");
+                return File.Exists(manifest)
+                    && EventsUpgradeAudit.IsListedInTestables(File.ReadAllText(manifest), PackageName);
             }
             catch (Exception)
             {

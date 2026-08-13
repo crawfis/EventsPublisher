@@ -108,6 +108,27 @@ namespace CrawfisSoftware.Events.Editor
             "Selected", "Changed", "Available", "Complete", "Completed", "Enabled", "Connected",
         };
 
+        /// <summary>
+        /// Whether a <c>manifest.json</c> lists a package in its <c>testables</c> array.
+        /// </summary>
+        /// <remarks>Scoped to the <c>testables</c> array specifically. A plain substring search over the
+        /// whole manifest matches the package's own <c>dependencies</c> entry, which is always present —
+        /// so it would report every project as already configured and never once be right.</remarks>
+        public static bool IsListedInTestables(string manifestJson, string packageName)
+        {
+            if (string.IsNullOrEmpty(manifestJson) || string.IsNullOrEmpty(packageName)) return false;
+
+            int key = manifestJson.IndexOf("\"testables\"", StringComparison.Ordinal);
+            if (key < 0) return false;
+            int open = manifestJson.IndexOf('[', key);
+            if (open < 0) return false;
+            int close = manifestJson.IndexOf(']', open);
+            if (close < 0) return false;
+
+            return manifestJson.Substring(open, close - open)
+                               .IndexOf("\"" + packageName + "\"", StringComparison.Ordinal) >= 0;
+        }
+
         /// <summary>Runs every check and returns the findings, most urgent first.</summary>
         public static List<UpgradeFinding> Analyze(UpgradeAuditInput input)
         {
