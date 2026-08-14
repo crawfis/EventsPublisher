@@ -55,7 +55,14 @@ Steps 1-5 are mechanical. Do them without asking, one commit each.
     then delete the subclasses and their [DefaultExecutionOrder] attributes. That
     attribute only orders Awake within one scene load batch, so it never protected
     additively-loaded scenes anyway. The old singleton forwards to the same facade, so
-    this can be done file by file.
+    the call sites can move file by file.
+      This is the one step that is NOT code-only. A singleton subclass is a MonoBehaviour,
+    so deleting it orphans every instance authored into a scene — the project ends up with
+    missing-script entries where a working singleton used to be. Find them by the
+    subclass's script GUID, show me the list, and remove them. Where the component sits on
+    a GameObject that hosts nothing else, the GameObject goes too; unlink its transform
+    from the scene roots or from its parent's m_Children, and confirm nothing still
+    references what you removed.
  5. Replace any per-publish Enum.Parse in "all events" handlers with
     EventsFor<T>.TryGetEnum(name, out var value).
 
@@ -74,6 +81,12 @@ Steps 6 and 7 need judgement. Propose, then wait for me.
     last. Propose a single level event carrying the value instead, and keep the edges as
     Transient for animation, SFX and analytics. Prefer an enum over bool wherever "not
     yet" is a meaningful third state.
+      Before marking anything Sticky, check whether it is the SOURCE of an auto-chain or a
+    bridge mapping. A retained event is redelivered to anything that subscribes late
+    through SubscribeToAll, so the whole chain re-fires from that point. Sometimes that is
+    exactly the fix — a bridge in an additively-loaded scene that was silently missing the
+    event now receives it — and sometimes it is a duplicate scene load or a re-run command.
+    Read the project's auto-flow and bridge maps and tell me which one you think it is.
       Only after a level event is in place and subscribed to, delete the corresponding
     static bool mirror and its Awake-time poll.
  7. Payload types. Add [EventPayload(typeof(X))] to events that carry data, and convert
@@ -106,7 +119,10 @@ Steps 6 and 7 need judgement. Propose, then wait for me.
 
 ## What not to do
 
- - Do not auto-rewrite scenes or prefabs. Every step here is a code or attribute change.
+ - Do not auto-rewrite scenes or prefabs. The single exception is removing the orphaned
+   publisher-singleton components in step 4, which is not optional — the step is unfinished
+   without it. Enumerate those by script GUID, show me the list before touching anything,
+   and leave alone any GameObject that carries something else.
  - Do not convert string fields to EventRef (see step 3).
  - Do not mark an event Sticky because its name sounds like a state. Use the runtime
    evidence, and when the evidence is absent say so rather than guessing.

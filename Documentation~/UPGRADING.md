@@ -90,7 +90,16 @@ GameFlowBus.Publish(GameFlowEvents.GameStarting, this, null);
 ```
 
 Then delete the singleton subclasses and the execution-order attributes. The old
-singleton still works and forwards to the same facade, so this can be done file by file.
+singleton still works and forwards to the same facade, so the call sites can move file by
+file.
+
+The deletion itself is not code-only, which is easy to miss. A subclass is a
+`MonoBehaviour`, so removing it orphans every instance authored into a scene and leaves a
+missing-script entry where a working singleton used to be. Find them by the subclass's
+script GUID and remove them; where the component is alone on its GameObject, remove the
+GameObject too and unlink its transform from the scene roots or its parent's `m_Children`.
+Verify nothing still references what you removed — this is the one part of the upgrade that
+edits `.unity` assets.
 
 ### 5. Remove per-publish `Enum.Parse`
 
@@ -139,6 +148,13 @@ event does not invoke the subscriber at all, which `bool` cannot express.
 
 The edges are **not** deleted. Animation, SFX and analytics want the moment, not the
 state. Keep them `Transient` alongside the new level.
+
+Check whether an event is the **source** of an auto-chain or bridge mapping before marking
+it `Sticky`. A retained event is redelivered to anything subscribing late through
+`SubscribeToAllEvents`, so the chain re-fires from that point. That is often the fix — a
+bridge in an additively-loaded scene that was silently missing the event now receives it —
+but the same mechanism can re-run a command or re-trigger a scene load. The maps are worth
+reading before the decision, not after.
 
 Then delete each `bool` and its `Awake`-time poll. A subscriber to a `Sticky` event is
 delivered the retained value immediately on subscribe, **with the payload**. For code
