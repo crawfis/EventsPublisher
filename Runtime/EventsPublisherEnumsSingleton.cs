@@ -4,20 +4,39 @@ using UnityEngine;
 
 namespace CrawfisSoftware.Events
 {
+    /// <summary>
+    /// Scene-object entry point to the events publisher for a single enum family.
+    /// </summary>
+    /// <remarks>
+    /// <para>Prefer <see cref="EventsFor{T}"/> for new code. This type requires a GameObject in a
+    /// scene and assigns <see cref="Instance"/> in <c>Awake</c>, so consumers must run later — which is
+    /// what <c>[DefaultExecutionOrder(-10000)]</c> on concrete subclasses is for. That attribute orders
+    /// <c>Awake</c> calls within a scene load batch, and an additively-loaded scene is a separate
+    /// batch, so a scene loaded before the one hosting this singleton will
+    /// <c>NullReferenceException</c> on <see cref="Instance"/>. <see cref="EventsFor{T}"/> is static
+    /// and lazily initialized, so that race cannot occur.</para>
+    /// <para>Every member here now forwards to <see cref="EventsFor{T}"/>, so the two paths share one
+    /// facade and cannot disagree. Existing scene objects keep working unchanged during migration.</para>
+    /// </remarks>
     public class EventsPublisherEnumsSingleton<T> : MonoBehaviour where T : Enum
     {
         public static EventsPublisherEnumsSingleton<T> Instance { get; private set; }
-        private EventsPublisherEnums<T> _eventsPublisher;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
             {
-                Destroy(Instance);
+                // Destroy the duplicate that just awoke, not the instance already in use.
+                Destroy(this);
                 return;
             }
             Instance = this;
-            _eventsPublisher = new EventsPublisherEnums<T>(EventsPublisher.Instance);
-            _eventsPublisher.RegisterKnownEvents();
+            EventsFor<T>.EnsureRegistered();
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
 
         /// <summary>
@@ -28,7 +47,7 @@ namespace CrawfisSoftware.Events
         /// <param name="data">The data associated with the event. This can be any object containing information relevant to the event.</param>
         public void PublishEvent(T eventEnum, object sender, object data)
         {
-            _eventsPublisher.PublishEvent(eventEnum, sender, data);
+            EventsFor<T>.Publish(eventEnum, sender, data);
         }
 
         /// <summary>
@@ -44,7 +63,7 @@ namespace CrawfisSoftware.Events
         /// event.</description></item> </list></param>
         public void SubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            _eventsPublisher.SubscribeToEvent(eventEnum, callback);
+            EventsFor<T>.Subscribe(eventEnum, callback);
         }
 
         /// <summary>
@@ -57,7 +76,34 @@ namespace CrawfisSoftware.Events
         /// the event is triggered.</param>
         public void UnsubscribeToEvent(T eventEnum, Action<string, object, object> callback)
         {
-            _eventsPublisher.UnsubscribeToEvent(eventEnum, callback);
+            EventsFor<T>.Unsubscribe(eventEnum, callback);
+        }
+
+        /// <summary>
+        /// Retrieves the most recently retained value for <paramref name="eventEnum"/>, without
+        /// subscribing to it. See <see cref="EventsFor{T}.TryGetLast"/>.
+        /// </summary>
+        public bool TryGetLast(T eventEnum, out object sender, out object data)
+        {
+            return EventsFor<T>.TryGetLast(eventEnum, out sender, out data);
+        }
+
+        /// <summary>
+        /// Gets the published event name for <paramref name="eventEnum"/>.
+        /// </summary>
+        public string GetEventName(T eventEnum)
+        {
+            return EventsFor<T>.GetEventName(eventEnum);
+        }
+
+        /// <summary>
+        /// Recovers the enum value for a published event name, without allocating.
+        /// </summary>
+        /// <remarks>Prefer this over slicing the name on '/' and calling <see cref="Enum.Parse{T}(string)"/>
+        /// inside an "all events" handler, which allocates a string per published event.</remarks>
+        public bool TryGetEnum(string eventName, out T eventEnum)
+        {
+            return EventsFor<T>.TryGetEnum(eventName, out eventEnum);
         }
         //private static void RegisterKnownEvents()
         //{
@@ -68,22 +114,20 @@ namespace CrawfisSoftware.Events
         //    }
         //}
 
+        /// <summary>
+        /// Subscribes <paramref name="callback"/> to every member of <typeparamref name="T"/>.
+        /// </summary>
         public void SubscribeToAllEnumEvents(Action<string, object, object> callback)
         {
-            foreach (T eventEnum in Enum.GetValues(typeof(T)))
-            {
-                //string eventName = eventEnum.ToString();
-                Instance.SubscribeToEvent(eventEnum, callback);
-            }
+            EventsFor<T>.SubscribeToAll(callback);
         }
 
+        /// <summary>
+        /// Unsubscribes <paramref name="callback"/> from every member of <typeparamref name="T"/>.
+        /// </summary>
         public void UnsubscribeToAllEnumEvents(Action<string, object, object> callback)
         {
-            foreach (T eventEnum in Enum.GetValues(typeof(T)))
-            {
-                //string eventName = eventEnum.ToString();
-                Instance.UnsubscribeToEvent(eventEnum, callback);
-            }
+            EventsFor<T>.UnsubscribeFromAll(callback);
         }
     }
 }
