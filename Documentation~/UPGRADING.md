@@ -4,6 +4,12 @@ Nothing here is required. The package is source-compatible: a project that upgra
 changes nothing keeps working exactly as before, with better diagnostics. Every step
 below is opt-in and independently shippable.
 
+> **Skip 2.4.0 and upgrade to 2.4.1.** 2.4.0 accidentally changed when a publish made
+> from inside a handler was delivered, so the paragraph above was false for that one
+> release — see the [erratum](#erratum-240-reordered-re-entrant-publishes) at the end of
+> this file for who it affects and how it shows up. 2.4.1 restores the 2.3.x behaviour
+> and pins it with tests.
+
 The design reasoning is in `adr/0001-event-identity-and-delivery.md`. This file is the
 operational version — what to do, in what order, and which parts a tool can decide for
 you.
@@ -41,10 +47,9 @@ Add the package to `testables` in `Packages/manifest.json`:
 { "testables": [ "com.crawfissoftware.eventspublisher" ] }
 ```
 
-Unity only builds a package's tests when the consuming project opts in. 104 EditMode
-tests then appear under **Window > General > Test Runner**. They were verified on a stub
-harness rather than in a real editor, so running them once in a real project is a genuine
-check, not a formality.
+Unity only builds a package's tests when the consuming project opts in. 109 EditMode
+tests then appear under **Window > General > Test Runner**. Running them once in your
+project is a genuine check of the project's setup, not a formality.
 
 ### 2. Mark the event enums — `[EventEnum]`
 
@@ -224,3 +229,32 @@ in a project that still has raw-string publishes** — which most do, and will k
 release. Set it to `false` to disable recording entirely; it then costs one bool test per
 publish. `EventsDiagnostics.Reset()` clears what has been recorded, and is called
 automatically at the start of each play session so a report describes one run.
+
+## Erratum: 2.4.0 reordered re-entrant publishes
+
+2.4.0 shipped a behavioural change while documenting it as no change, so upgrades were
+not audited for it. A publish made from **inside** an event handler no longer completed
+before the publishing statement returned; it was queued and delivered after everything
+already in flight — including after the rest of the handler that published it. Top-level
+publishes were unaffected, which is why every test that existed at the time stayed green.
+2.4.1 restores the 2.3.x contract, now pinned by `NestedPublishOrderingTests`:
+`PublishEvent` returns only after its event has been delivered, at any nesting depth.
+
+If a project ran on 2.4.0, the thing to look back for is a silent reorder, not an error.
+Affected code publishes from inside a handler and relies on the effects of that publish
+afterwards:
+
+- a handler that publishes X and then reads state X's subscribers computed;
+- a handler that publishes two events in sequence, where the second event's subscribers
+  consume what the first event's chain produced;
+- auto-chain or bridge components that republish in response to events — the chained
+  event landed behind anything published later in the same cascade.
+
+It shows up as ordering casualties with nothing in the failure naming the event system: a
+guard like `if (cache.Count > 0)` or `if (_ready)` silently skipping because the event
+that satisfies it arrived late; a `NullReferenceException` in a handler whose input an
+earlier event should have set; state lagging one event behind what was just published.
+Moving to 2.4.1 removes the cause. To audit a run that stays on 2.4.0, search handlers
+for `PublishEvent` (and facade `Publish`) calls that are followed by more code in the
+same handler, or that are one of several publishes in one handler — those are the sites
+whose timing changed.

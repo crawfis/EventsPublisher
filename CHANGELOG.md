@@ -5,6 +5,36 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-08-15
+
+### Fixed
+
+- 2.4.0 changed when a publish made from *inside* a handler was delivered, while
+  documenting the change as no change. The nested publish was queued behind everything
+  already in flight instead of completing before the publishing statement returned, so a
+  handler that published event A and then acted on its results — or published A and then
+  C, with C's subscribers consuming what A's chain produced — ran against state that did
+  not exist yet. The deferral was also per-frame, so the same publish was deferred on the
+  frame whose drain was active and delivered inline on every other frame of the stack.
+  The 2.3.x contract is restored and now pinned by tests: `PublishEvent` returns only
+  after its event has been delivered, at any nesting depth. What the 2.4.0 rework
+  actually set out to do is kept — no reflection dispatch, and a callback that escapes
+  cannot strand queue entries for a later publish — and sticky replay triggered by a
+  `Subscribe` made mid-drain is untouched: it stays deferred, as decided when replay
+  became immediate. If you shipped on 2.4.0, see the erratum in
+  `Documentation~/UPGRADING.md` for how the reorder shows up.
+- The drain's error log could itself throw — it formats the handler's target and the
+  exception, either of which can have a throwing `ToString()` — which aborted the drain
+  and silently discarded every callback still queued. The logging is now contained, and
+  the queued callbacks are delivered.
+
+### Added
+
+- `NestedPublishOrderingTests` — five EditMode tests pinning the re-entrant publish
+  contract with control-flow assertions rather than final-sequence ones, bringing the
+  suite to 109. Four of the five fail on 2.4.0, which is how the regression was
+  demonstrated; all five pass on 2.3.1 and on this release.
+
 ## [2.4.0] - 2026-08-14
 
 Event identity and delivery timing. Everything here is additive: no public API was removed
@@ -60,6 +90,9 @@ wrong.
   removing a reflection dispatch and an `object[]` allocation per callback per publish.
 - A nested publish enqueues and returns rather than starting a second drain of the shared
   queue. Ordering is unchanged; the intent is now explicit rather than incidental.
+  *Correction: the second sentence was wrong. This deferred a nested publish's delivery
+  until after the publishing statement returned — and only on the frame whose drain was
+  active. Reversed in 2.4.1.*
 - Retention is top-frame only. Every publisher frame is still dispatched to, but only the
   frame that is top at publish time retains the value, so `Push`/`Pop` is a real scope.
 
@@ -99,5 +132,6 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.4.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.1
 [2.4.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.0
 [2.3.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.3.1
