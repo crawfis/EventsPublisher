@@ -29,7 +29,7 @@ namespace CrawfisSoftware.Events.Tests
         }
 
         [Test]
-        public void NestedPublish_TwoLevelsDeep_StaysBreadthFirst()
+        public void NestedPublish_TwoLevelsDeep_DeliversLevelByLevel()
         {
             Bus.RegisterEvent("A");
             Bus.RegisterEvent("B");
@@ -41,6 +41,9 @@ namespace CrawfisSoftware.Events.Tests
 
             Bus.PublishEvent("A", null, null);
 
+            // The FIFO sequence, identical under the re-entrant completion drain: A2 is queued ahead
+            // of B1, and C1 is enqueued mid-chain by B1. When control returns to each publisher is a
+            // separate contract, pinned by NestedPublishOrderingTests.
             Assert.AreEqual("A1,A2,B1,C1", string.Join(",", Log));
         }
 

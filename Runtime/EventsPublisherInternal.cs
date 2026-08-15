@@ -14,10 +14,12 @@ namespace CrawfisSoftware.Events
         private Queue<(string eventName, Action<string, object, object> callback, object sender, object data)> _callbackQueue
             = new Queue<(string eventName, Action<string, object, object> callback, object sender, object data)>();
 
-        // Guards against a callback that publishes an event, or subscribes to one, starting a second
-        // nested drain of the shared queue. Nested work enqueues and returns; the outermost drain
-        // processes it in order.
-        private bool _isDraining;
+        // Depth of re-entrant Drain calls. A publish made from inside a callback drains the shared
+        // queue itself, re-entrantly, so the published event is fully delivered before the publishing
+        // statement returns — the contract auto-chained events are built on. The depth is tracked so
+        // that a subscribe-triggered replay stays deferred while a drain is in flight, and so that only
+        // the outermost drain performs the escaped-exception cleanup in Drain's finally.
+        private int _drainDepth;
 
         // Retained values, per policy. These are per-frame by design: the policy registry is
         // stack-global, but what was actually published lives in the frame it was published into, so
@@ -108,7 +110,11 @@ namespace CrawfisSoftware.Events
                     EventsDiagnostics.NoteTransientSubscribe(eventId);
                     return;
             }
-            Drain();
+            // Unlike a nested publish, a replay stays deferred while a drain is in flight: it is
+            // delivered after the callbacks already queued, not inside the subscriber's Subscribe
+            // call. Decided when replay moved from end-of-frame to immediate, and pinned by
+            // SubscribeFromInsideAHandler_EnqueuesTheReplayRatherThanNesting.
+            if (_drainDepth == 0) Drain();
         }
 
         /// <summary>
@@ -247,14 +253,23 @@ namespace CrawfisSoftware.Events
         /// <summary>
         /// Invokes queued callbacks until the queue is empty.
         /// </summary>
-        /// <remarks>Nested work — a callback that publishes an event, or subscribes to one and
-        /// triggers a replay — only enqueues. The outermost call owns the drain, so the remaining
-        /// callbacks for the <em>current</em> event run first, as intended.</remarks>
+        /// <remarks>
+        /// <para>Two guarantees hold together here. Callbacks run in FIFO order off one shared queue,
+        /// so the remaining callbacks for the <em>current</em> event run before any newly published
+        /// event's callbacks. And a publish drains re-entrantly, so by the time <c>PublishEvent</c>
+        /// returns — at any nesting depth — everything it enqueued has been delivered. Auto-chained
+        /// events depend on the second guarantee: a producer that publishes an event whose subscribers
+        /// derive state, then publishes a second event whose subscribers consume that state, needs the
+        /// first chain complete before the second publish is made.</para>
+        /// <para>A consequence of holding both at once: a nested publish also flushes the current
+        /// event's still-queued callbacks, since they sit ahead of the nested event's in the queue.
+        /// They could not run any later without breaking one of the two guarantees.</para>
+        /// <para>Subscribe-triggered replay is the one caller that stays deferred while a drain is in
+        /// flight — see <see cref="ReplayTo"/>.</para>
+        /// </remarks>
         private void Drain()
         {
-            if (_isDraining) return;
-
-            _isDraining = true;
+            _drainDepth++;
             try
             {
                 while (_callbackQueue.Count > 0)
@@ -267,16 +282,32 @@ namespace CrawfisSoftware.Events
                     }
                     catch (Exception e)
                     {
-                        UnityEngine.Debug.LogError(
-                            $"Exception publishing {message.eventName} to {callback.Target}: {e}");
+                        try
+                        {
+                            UnityEngine.Debug.LogError(
+                                $"Exception publishing {message.eventName} to {callback.Target}: {e}");
+                        }
+                        catch (Exception loggingFailure)
+                        {
+                            // Formatting the message runs ToString on the handler's target and on the
+                            // exception, either of which can itself throw. A log line must never abort
+                            // the drain and discard the callbacks still queued.
+                            UnityEngine.Debug.LogError(
+                                $"Exception publishing {message.eventName}; the details could not be formatted " +
+                                $"({loggingFailure.GetType().Name} thrown while logging {e.GetType().Name}).");
+                        }
                     }
                 }
             }
             finally
             {
-                // Never leave stale callbacks queued; they would otherwise flush during an unrelated publish.
-                _callbackQueue.Clear();
-                _isDraining = false;
+                _drainDepth--;
+                // Nothing pends here on any non-fatal path: the loop runs to empty, handler exceptions
+                // are contained above, and an exception escaping a nested drain is caught by the level
+                // that invoked the publishing handler. If a process-level exception still escapes the
+                // outermost drain, discard rather than leave entries to flush during an unrelated
+                // later publish.
+                if (_drainDepth == 0) _callbackQueue.Clear();
             }
         }
 

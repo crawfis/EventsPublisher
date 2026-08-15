@@ -526,8 +526,10 @@ direction.
 1. **Re-entrancy into the drain.** `Subscribe` called from inside a handler — during
    an active publish drain — must not invoke a callback mid-drain. The replay is
    routed through the same `_callbackQueue`: if a drain is in progress it enqueues and
-   runs in order, otherwise it invokes immediately. The `_isDraining` guard added in
-   Stage 0 is the hook. **This is the part that needs care in implementation.**
+   runs in order, otherwise it invokes immediately. The drain guard added in Stage 0 is
+   the hook (originally an `_isDraining` bool; a depth counter since 2.4.1, so that a
+   nested *publish* drains re-entrantly while a mid-drain subscribe still defers).
+   **This is the part that needs care in implementation.**
 2. **Structural work in a handler.** A handler that loads or unloads scenes during the
    `Awake` of a still-loading scene is dicey in Unity. Such a subscriber defers itself
    (`StartCoroutine`, or a flag acted on in `Update`) — and would face the same
@@ -657,9 +659,24 @@ builds side by side. Claims below distinguish *fixed live defect* from *hardenin
 - **Nested publishes enqueue and return** rather than starting a second drain of the
   shared queue, with `try/finally` clearing the flag and the queue. Nested ordering
   was verified **identical to the previous behavior** (`A1,A2,B1,B2` and
-  `A1,A2,B1,B2,C1` for a two-level nest), so this is not a behavioral change — it
-  makes the intent stated in the existing comment explicit rather than incidental,
-  and guarantees a callback that escapes cannot strand entries for a later publish.
+  `A1,A2,B1,B2,C1` for a two-level nest), and this was recorded as not being a
+  behavioral change.
+  *Correction (2.4.1): it was a behavioral change, and those probes could not see it.*
+  Both observe a single chain of nested publishes as a final sequence, and the shared
+  FIFO queue yields the same sequence under either drain. What the old inline drain
+  additionally guaranteed was **completion**: every `PublishEvent`, at any depth,
+  drained the queue to empty before returning, so a handler could publish and then act
+  on the result — the contract auto-chained events are built on. Enqueue-and-return
+  broke exactly that (a handler publishing A and then C had C's subscribers run before
+  A's chain reached them), and because the guard was per-frame state, the same nested
+  publish was deferred on the frame whose drain was active while being delivered
+  inline on every other frame of the stack. It broke a consuming project silently —
+  the symptom was a guard skipping over a not-yet-filled cache, with nothing naming
+  the event system. 2.4.1 restored the completion contract with a re-entrant drain
+  behind a depth counter, kept this change's exception hygiene (an escaping callback
+  still cannot strand entries for a later publish), kept mid-drain subscribe replay
+  deferred, and pinned the contract in `NestedPublishOrderingTests` — probes that
+  assert on control flow, not just the final sequence.
 - **Null/empty event names are rejected** instead of reaching
   `Dictionary.ContainsKey(null)`, which throws `ArgumentNullException` (confirmed
   against the old build). Reachable via `FireEventAfterSceneLoads.OnDestroy`, which
@@ -694,10 +711,11 @@ consumers continue to compile.
 
 ### Tests
 
-`Tests/Editor` holds 104 EditMode tests across nine fixtures, covering dispatch ordering
-and isolation, the static facade and its registration timing, all three delivery
-policies, the interned identity, the Inspector catalog and `EventRef`, typed payloads,
-the late-delivery diagnostic, and the upgrade audit's reasoning. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
+`Tests/Editor` holds 109 EditMode tests across ten fixtures, covering dispatch ordering
+and isolation, the re-entrant publish completion contract, the static facade and its
+registration timing, all three delivery policies, the interned identity, the Inspector
+catalog and `EventRef`, typed payloads, the late-delivery diagnostic, and the upgrade
+audit's reasoning. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
 test can reset `EventsRegistry`'s static state — a public reset would be a footgun in
 game code.
 
