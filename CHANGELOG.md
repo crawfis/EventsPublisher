@@ -5,6 +5,28 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-08-27
+
+Additive: nothing was removed or changed, so a 2.4.x consumer that upgrades and changes nothing
+keeps working.
+
+### Added
+
+- `EventsRegistry.RegisteredEnumTypes` — every enum family the registry currently holds, as a
+  read-only collection. The registry could already report an event's policy, its payload type, and
+  the prefix a given enum projects onto, but not *which* enums had registered, so anything wanting
+  to describe a project's event domains had to run a reflection sweep of its own and hope it agreed
+  with the runtime. Every read hands back the same collection rather than building a snapshot. Both
+  sides of a prefix collision are listed: both families registered, and seeing them share a prefix
+  is the point.
+- **CrawfisSoftware > Events > List Domains** — one console line per registered domain, giving the
+  prefix, the enum's full name, how many members it declares, and how many of those declare
+  `[EventPayload]`, `Sticky` or `Replay`. Nothing sweeps in edit mode — the `BeforeSceneLoad` sweep
+  runs before the first scene loads — so the menu runs that same sweep before reporting rather than
+  walking the assemblies a second, drifting way. In play mode it additionally lists the families that
+  registered lazily, which no attribute-based scan can see.
+- 13 EditMode tests covering the enumeration and the domain summary, bringing the suite to 122.
+
 ## [2.4.1] - 2026-08-15
 
 ### Fixed
@@ -132,6 +154,7 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.5.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.5.0
 [2.4.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.1
 [2.4.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.0
 [2.3.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.3.1

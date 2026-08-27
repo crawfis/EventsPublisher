@@ -151,6 +151,25 @@ public enum Events { ... }
 Only that enum's names change. Set it when the enum is introduced — changing it later
 renames every one of its events and breaks any name already serialized.
 
+## Listing the event domains
+
+**CrawfisSoftware > Events > List Domains** logs one line per registered enum family: the
+prefix it publishes under, the enum's full name, how many members it declares, and how
+many of those declare `[EventPayload]`, `Sticky` or `Replay`.
+
+```
+GameFlowEvents/  —  MyGame.Flow.GameFlowEvents  —  7 member(s), 2 with [EventPayload], 3 Sticky, 0 Replay
+```
+
+Nothing sweeps in edit mode — the sweep runs before the first scene loads — so the menu
+runs that same sweep before reporting. In play mode it also lists the families that
+registered lazily on first touch, which no scan for `[EventEnum]` can see.
+
+The same list is available in code as `EventsRegistry.RegisteredEnumTypes`, with
+`EventsRegistry.GetPrefix(type)` for the prefix each one projects onto. It reports what
+the registry holds rather than what the project contains, and every read hands back the
+same collection rather than building a snapshot.
+
 ## Diagnostics
 
 `EventsPublisher.StrictMode` — on by default in the editor and development builds —

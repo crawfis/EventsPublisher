@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Reflection;
 
 using UnityEngine;
@@ -19,6 +20,15 @@ namespace CrawfisSoftware.Events
     {
         // Which enum type has claimed a given "TypeName/" prefix, across all enum families.
         private static readonly Dictionary<string, Type> _claimedPrefixes = new Dictionary<string, Type>();
+
+        // Every enum type that has registered, in registration order. Kept alongside _claimedPrefixes
+        // rather than read out of it: on a collision only the first claimant is recorded there, and both
+        // families did register. A list because the count is the number of event families in a project —
+        // a handful — and the read-only wrapper is built once, so reading the property hands back the
+        // same collection rather than building a snapshot per call.
+        private static readonly List<Type> _registeredEnums = new List<Type>();
+        private static readonly ReadOnlyCollection<Type> _registeredEnumsView =
+            new ReadOnlyCollection<Type>(_registeredEnums);
 
         // Reset callbacks published by each EventsFor<T> that has been initialized.
         private static readonly List<Action> _resetHandlers = new List<Action>();
@@ -210,6 +220,11 @@ namespace CrawfisSoftware.Events
         internal static void ClaimPrefix(string prefix, Type enumType)
         {
             if (string.IsNullOrEmpty(prefix) || enumType == null) return;
+
+            // Recorded before the collision check, so that both sides of a collision are listed as the
+            // registered families they both are. Linear, and deliberately so: this runs once per family.
+            if (!_registeredEnums.Contains(enumType)) _registeredEnums.Add(enumType);
+
             if (_claimedPrefixes.TryGetValue(prefix, out Type existing))
             {
                 if (existing != enumType)
@@ -222,6 +237,28 @@ namespace CrawfisSoftware.Events
             }
             _claimedPrefixes[prefix] = enumType;
         }
+
+        /// <summary>
+        /// Every enum type registered as an event family, in the order the families registered.
+        /// </summary>
+        /// <remarks>
+        /// <para>This is what the registry holds, not what the project contains. A family marked
+        /// <see cref="EventEnumAttribute"/> is here from the
+        /// <see cref="RuntimeInitializeLoadType.BeforeSceneLoad"/> sweep onwards; an unmarked one appears
+        /// the moment its <see cref="EventsFor{T}"/> is first touched, and not before. Nothing sweeps in
+        /// edit mode, so an editor tool that wants the marked families must ask for them — which is what
+        /// the <c>CrawfisSoftware &gt; Events &gt; List Domains</c> menu item does.</para>
+        /// <para>The prefix a listed type projects onto is <see cref="GetPrefix"/>. Two of them can
+        /// report the same one: that is a collision, it is reported as an error when it happens, and
+        /// both families are listed here because both of them registered.</para>
+        /// <para>Read-only through this reference and live behind it: every read hands back the same
+        /// collection rather than a snapshot, so a family registering later appears without this being
+        /// read again. Take a copy before walking it if the walk itself can register a family — which
+        /// means constructing an <see cref="EventsFor{T}"/> — since that invalidates an enumerator in
+        /// progress. Like the rest of the registry it assumes the Unity main thread; nothing here is
+        /// synchronized.</para>
+        /// </remarks>
+        public static IReadOnlyCollection<Type> RegisteredEnumTypes => _registeredEnumsView;
 
         /// <summary>
         /// Registers a callback that drops a generic facade's cached state, so it is rebuilt on next use.
@@ -256,6 +293,9 @@ namespace CrawfisSoftware.Events
             }
             _resetHandlers.Clear();
             _claimedPrefixes.Clear();
+            // Cleared with the prefixes it was recorded alongside: the facades are gone, so reporting
+            // their families as registered would describe a registry that no longer exists.
+            _registeredEnums.Clear();
             _policies.Clear();
             _payloadTypes.Clear();
             TypedSubscriptions.Clear();
