@@ -311,14 +311,36 @@ namespace CrawfisSoftware.Events
         /// <summary>
         /// Registers every enum marked with <see cref="EventEnumAttribute"/> before the first scene loads.
         /// </summary>
-        /// <remarks>See <see cref="EventEnumAttribute"/> for why this exists when
-        /// <see cref="EventsFor{T}"/> already registers lazily on first use.</remarks>
+        /// <remarks>
+        /// <para>See <see cref="EventEnumAttribute"/> for why this exists when
+        /// <see cref="EventsFor{T}"/> already registers lazily on first use.</para>
+        /// <para>Test assemblies are skipped, per <see cref="IsTestAssembly"/>. An event family is a
+        /// fact about a project, and a fixture that exists to exercise this sweep is not one:
+        /// registering it claims a prefix in the project's event namespace, lists it under
+        /// <c>List Domains</c>, and offers its members in the Inspector dropdowns — all of it
+        /// describing events that nothing will ever publish. This package's own fixtures reached
+        /// consumer projects exactly that way, through <c>testables</c>.</para>
+        /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         internal static void RegisterAnnotatedEventEnums()
         {
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            RegisterAnnotatedEventEnums(NonTestAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
+        }
+
+        /// <summary>
+        /// Registers every <see cref="EventEnumAttribute"/>-marked enum in the given assemblies.
+        /// </summary>
+        /// <remarks>Takes the assemblies rather than reading the AppDomain itself, so that the
+        /// filtering lives at the entry point and this stays exercisable: the tests that assert a
+        /// marked family registers hand it their own assembly, which is precisely the assembly the
+        /// entry point excludes.</remarks>
+        internal static void RegisterAnnotatedEventEnums(IEnumerable<Assembly> assemblies)
+        {
+            if (assemblies == null) return;
+
+            foreach (Assembly assembly in assemblies)
             {
-                if (assembly.IsDynamic) continue;
+                if (assembly == null || assembly.IsDynamic) continue;
 
                 Type[] types;
                 // A single unloadable dependency must not stop the sweep; take whatever loaded.
@@ -345,6 +367,45 @@ namespace CrawfisSoftware.Events
                 }
             }
         }
+
+        /// <summary>Yields the assemblies that can hold event families, dropping the test ones.</summary>
+        private static IEnumerable<Assembly> NonTestAssemblies(Assembly[] assemblies)
+        {
+            foreach (Assembly assembly in assemblies)
+            {
+                if (!IsTestAssembly(assembly)) yield return assembly;
+            }
+        }
+
+        /// <summary>
+        /// Whether an assembly is a test assembly, and therefore not a source of event families.
+        /// </summary>
+        /// <remarks>
+        /// <para>Keyed on a reference to NUnit, which every Unity test assembly carries — the Test
+        /// Framework compiles them against it — and which no shipping assembly has reason to.</para>
+        /// <para>Reflection rather than <c>UnityEditor.Compilation.AssemblyFlags</c> because this runs
+        /// in the runtime assembly, which cannot reference the editor. The editor tools call this
+        /// rather than testing for a test assembly their own way, so there is one definition of the
+        /// rule instead of three that could disagree about which fixtures are hidden.</para>
+        /// </remarks>
+        internal static bool IsTestAssembly(Assembly assembly)
+        {
+            if (assembly == null) return false;
+
+            AssemblyName[] references;
+            // Same reasoning as the GetTypes guard: an assembly whose manifest cannot be read is no
+            // reason to stop, and treating it as non-test only risks listing a family that is real.
+            try { references = assembly.GetReferencedAssemblies(); }
+            catch (Exception) { return false; }
+
+            foreach (AssemblyName reference in references)
+            {
+                if (string.Equals(reference.Name, NUnitAssemblyName, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        private const string NUnitAssemblyName = "nunit.framework";
 
         internal const string EnsureRegisteredMethodName = "EnsureRegistered";
     }

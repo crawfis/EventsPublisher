@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 
 using NUnit.Framework;
 
@@ -16,6 +17,14 @@ namespace CrawfisSoftware.Events.Tests
     {
         /// <summary>Collects handler invocations as <c>"tag:data"</c> so order can be asserted.</summary>
         protected List<string> Log { get; private set; }
+
+        /// <summary>This suite's own assembly, for handing to the sweep directly.</summary>
+        /// <remarks>The parameterless <see cref="EventsRegistry.RegisterAnnotatedEventEnums()"/> entry
+        /// point excludes test assemblies — that exclusion is what keeps these fixtures out of a
+        /// consuming project's domain listing and Inspector dropdowns — so a test that needs the sweep
+        /// to see its own fixtures asks for them by name rather than relying on ambient AppDomain
+        /// state, which is the more honest thing for those tests to assert anyway.</remarks>
+        protected static readonly Assembly[] OwnAssembly = { typeof(EventsTestBase).Assembly };
 
         protected static IStackEventsPublisher<string> Bus => EventsPublisher.Instance;
 

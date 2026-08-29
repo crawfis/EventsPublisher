@@ -110,23 +110,32 @@ namespace CrawfisSoftware.Events.Editor
         {
             var found = new List<Type>();
             foreach (Type type in TypeCache.GetTypesDerivedFrom(typeof(EventsPublisherEnumsSingleton<>)))
-                if (!type.IsAbstract) found.Add(type);
+                if (!type.IsAbstract && !EventsRegistry.IsTestAssembly(type.Assembly)) found.Add(type);
             return found;
         }
 
         /// <summary>
         /// Finds every enum acting as an event family, whether or not it is marked yet.
         /// </summary>
-        /// <remarks>Three sources, because a project part-way through the migration has families in
+        /// <remarks>
+        /// <para>Three sources, because a project part-way through the migration has families in
         /// each: already marked with the attribute, still behind a singleton subclass, and named in a
         /// <c>EventsFor&lt;T&gt;</c> type argument in source. The last needs a source scan — a type
-        /// argument leaves no trace this tool can reflect over.</remarks>
+        /// argument leaves no trace this tool can reflect over.</para>
+        /// <para>Test assemblies are excluded from the two reflected sources, as they are from the
+        /// runtime sweep. The audit advises a project on its own migration, and a fixture is not part
+        /// of what there is to migrate: reporting one would be a finding no consumer could act on. The
+        /// source scan needs no such filter — it reads <c>Assets</c> only.</para>
+        /// </remarks>
         private static List<Type> CollectEventEnums(List<Type> singletons)
         {
             var found = new List<Type>();
             var seen = new HashSet<Type>();
 
-            foreach (Type type in TypeCache.GetTypesWithAttribute<EventEnumAttribute>()) AddEnum(found, seen, type);
+            foreach (Type type in TypeCache.GetTypesWithAttribute<EventEnumAttribute>())
+            {
+                if (!EventsRegistry.IsTestAssembly(type.Assembly)) AddEnum(found, seen, type);
+            }
 
             foreach (Type subclass in singletons)
             {
