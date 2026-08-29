@@ -62,10 +62,37 @@ namespace CrawfisSoftware.Events.Tests
 
             // [EventEnum] covers the one case lazy initialization cannot: a name reaching the publisher
             // as a raw string, from a serialized Inspector field, without the facade ever being touched.
-            EventsRegistry.RegisterAnnotatedEventEnums();
+            EventsRegistry.RegisterAnnotatedEventEnums(OwnAssembly);
 
             Bus.PublishEvent("SweptTestEvents/One", "probe", null);
             LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void TheSweep_SkipsTestAssemblies()
+        {
+            // The fixtures in this suite are marked [EventEnum] because the sweep tests need them to
+            // be. That must not make them events in a consuming project: until the entry point learned
+            // to skip test assemblies, a project listing this package in "testables" got nine of these
+            // fixtures registered as real domains at BeforeSceneLoad.
+            // The real entry point, so what is covered is the filtering as it actually runs. It sweeps
+            // the whole AppDomain, which in a consuming project registers that project's own families
+            // too — and anything they log on the way would otherwise fail this test for reasons that
+            // have nothing to do with it. The assertion below is what this test is about.
+            LogAssert.ignoreFailingMessages = true;
+            try { EventsRegistry.RegisterAnnotatedEventEnums(); }
+            finally { LogAssert.ignoreFailingMessages = false; }
+
+            CollectionAssert.DoesNotContain(EventsRegistry.RegisteredEnumTypes, typeof(SweptTestEvents));
+        }
+
+        [Test]
+        public void IsTestAssembly_TellsThisSuiteFromThePackage()
+        {
+            // The rule is a reference to NUnit, so it holds for any consumer's test assembly too —
+            // a student's fixture marked [EventEnum] stays out of their own project's listing.
+            Assert.IsTrue(EventsRegistry.IsTestAssembly(typeof(EventsForTests).Assembly));
+            Assert.IsFalse(EventsRegistry.IsTestAssembly(typeof(EventsRegistry).Assembly));
         }
 
         [Test]

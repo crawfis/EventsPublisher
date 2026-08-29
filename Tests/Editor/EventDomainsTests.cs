@@ -67,9 +67,30 @@ namespace CrawfisSoftware.Events.Tests
             // the menu sweeps before reading it rather than assuming something already has.
             CollectionAssert.DoesNotContain(EventsRegistry.RegisteredEnumTypes, typeof(DomainListingTestEvents));
 
-            EventsRegistry.RegisterAnnotatedEventEnums();
+            EventsRegistry.RegisterAnnotatedEventEnums(OwnAssembly);
 
             CollectionAssert.Contains(EventsRegistry.RegisteredEnumTypes, typeof(DomainListingTestEvents));
+        }
+
+        [Test]
+        public void TheListing_ExcludesFixturesFromTheTestAssembly()
+        {
+            // The symptom the exclusion exists for: "CrawfisSoftware > Events > List Domains" in a
+            // consuming project printed this suite's fixtures alongside the project's own domains,
+            // which makes the listing useless as the authoritative answer to "what domains are there".
+            // The real entry point, so what is covered is the filtering as it actually runs. It sweeps
+            // the whole AppDomain, which in a consuming project registers that project's own families
+            // too — and anything they log on the way would otherwise fail this test for reasons that
+            // have nothing to do with it. The assertion below is what this test is about.
+            LogAssert.ignoreFailingMessages = true;
+            try { EventsRegistry.RegisterAnnotatedEventEnums(); }
+            finally { LogAssert.ignoreFailingMessages = false; }
+
+            foreach (EventDomain domain in EventDomainCatalog.Describe(EventsRegistry.RegisteredEnumTypes))
+            {
+                Assert.AreNotEqual(typeof(EventsTestBase).Assembly, domain.EnumType.Assembly,
+                                   "the listing must not report the fixture " + domain.EnumType.FullName);
+            }
         }
 
         [Test]
@@ -77,7 +98,7 @@ namespace CrawfisSoftware.Events.Tests
         {
             // [EventEnum] governs when a family registers, not whether it counts as a domain: an unmarked
             // one is a domain from the moment its facade is built, and the listing must say so.
-            EventsRegistry.RegisterAnnotatedEventEnums();
+            EventsRegistry.RegisterAnnotatedEventEnums(OwnAssembly);
             CollectionAssert.DoesNotContain(EventsRegistry.RegisteredEnumTypes, typeof(DomainUnmarkedTestEvents));
 
             EventsFor<DomainUnmarkedTestEvents>.EnsureRegistered();
@@ -200,7 +221,7 @@ namespace CrawfisSoftware.Events.Tests
         public void SweepThenDescribe_SummarisesWhatTheRegistryHolds()
         {
             // What the menu does, without the editor API: sweep, then summarise the registry itself.
-            EventsRegistry.RegisterAnnotatedEventEnums();
+            EventsRegistry.RegisterAnnotatedEventEnums(OwnAssembly);
 
             EventDomain domain = Find(EventDomainCatalog.Describe(EventsRegistry.RegisteredEnumTypes),
                                       typeof(DomainListingTestEvents));

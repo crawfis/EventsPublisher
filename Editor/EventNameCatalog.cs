@@ -17,6 +17,10 @@ namespace CrawfisSoftware.Events.Editor
     /// <para>Marking an enum <see cref="EventEnumAttribute"/> is the opt-in. An enum with no attribute
     /// contributes nothing, and a serialized value naming one of its members is treated as unknown —
     /// shown as missing, never silently cleared.</para>
+    /// <para>A marked enum in a test assembly contributes nothing either, matching the runtime sweep.
+    /// Offering a fixture here would let an Inspector field be pointed at an event that no shipping
+    /// code publishes, which fails silently at runtime — the exact outcome the projection above is
+    /// kept single-definition to prevent.</para>
     /// </remarks>
     internal static class EventNameCatalog
     {
@@ -30,7 +34,14 @@ namespace CrawfisSoftware.Events.Editor
                 if (_cached == null)
                 {
                     // TypeCache is maintained by the editor and is far cheaper than walking assemblies.
-                    var enumTypes = new List<Type>(TypeCache.GetTypesWithAttribute<EventEnumAttribute>());
+                    // Filtered here rather than in BuildNames: the projection is the tested core and
+                    // takes whatever types it is handed, so the rule about which types to offer belongs
+                    // at the boundary that discovers them.
+                    var enumTypes = new List<Type>();
+                    foreach (Type type in TypeCache.GetTypesWithAttribute<EventEnumAttribute>())
+                    {
+                        if (!EventsRegistry.IsTestAssembly(type.Assembly)) enumTypes.Add(type);
+                    }
                     _cached = BuildNames(enumTypes);
                 }
                 return _cached;

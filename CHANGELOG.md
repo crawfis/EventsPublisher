@@ -5,6 +5,43 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-08-29
+
+### Fixed
+
+- This package's own test fixtures registered as event domains in any project that listed it
+  in `testables`. Nine enums in `CrawfisSoftware.EventsPublisher.Tests` are marked
+  `[EventEnum]` — the sweep tests need them to be — and the `BeforeSceneLoad` sweep walked
+  every assembly in the AppDomain without asking where a family came from. On entering play
+  mode they claimed prefixes in the project's own event namespace, and they surfaced in all
+  three places `[EventEnum]` is discovered: **List Domains**, the Inspector event-name
+  dropdowns, and the **Upgrade Audit** window. A consumer with three real domains saw twelve,
+  and could point a serialized event field at `SweptTestEvents/One` — a name nothing
+  publishes, failing silently at runtime with no error to follow.
+
+  The sweep and both editor discovery sites now skip test assemblies, identified by a
+  reference to `nunit.framework`. The rule covers a *consuming* project's test assemblies
+  too, so a fixture marked `[EventEnum]` in your own EditMode tests no longer leaks into your
+  domain listing. Nothing changes for a project that does not compile test assemblies, and
+  builds were never affected — test assemblies are editor-only.
+
+  Removing the package from `testables` was the only workaround, at the cost of not being
+  able to run its tests; that is no longer necessary.
+
+### Added
+
+- `EventsRegistry.RegisterAnnotatedEventEnums(IEnumerable<Assembly>)` — the sweep over an
+  explicit set of assemblies. The parameterless entry point is now the filtering boundary and
+  delegates to it, which is what keeps the exclusion testable: the tests that assert a marked
+  family registers hand the sweep their own assembly, precisely the one the entry point drops.
+  Internal, like the sweep it splits.
+- `EventsRegistry.IsTestAssembly(Assembly)` — the single definition of that rule, shared by
+  the runtime sweep and the two editor tools rather than each testing for it their own way.
+  Internal.
+- 3 EditMode tests pinning the exclusion end to end — the sweep skips a marked fixture, the
+  domain listing reports no fixture, and the predicate tells the suite from the package —
+  bringing the suite to 125.
+
 ## [2.5.0] - 2026-08-27
 
 Additive: nothing was removed or changed, so a 2.4.x consumer that upgrades and changes nothing
