@@ -106,10 +106,15 @@ namespace CrawfisSoftware.Events.Editor
             };
         }
 
+        // The obsolete warning is suppressed here and at the base-type walk below: naming the
+        // deprecated type is what this tool is for, and a report that cannot mention what it
+        // reports on would be useless.
         private static List<Type> CollectSingletonSubclasses()
         {
             var found = new List<Type>();
+#pragma warning disable 618
             foreach (Type type in TypeCache.GetTypesDerivedFrom(typeof(EventsPublisherEnumsSingleton<>)))
+#pragma warning restore 618
                 if (!type.IsAbstract && !EventsRegistry.IsTestAssembly(type.Assembly)) found.Add(type);
             return found;
         }
@@ -141,7 +146,9 @@ namespace CrawfisSoftware.Events.Editor
             {
                 for (Type baseType = subclass.BaseType; baseType != null; baseType = baseType.BaseType)
                 {
+#pragma warning disable 618
                     if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(EventsPublisherEnumsSingleton<>))
+#pragma warning restore 618
                     {
                         AddEnum(found, seen, baseType.GetGenericArguments()[0]);
                         break;

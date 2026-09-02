@@ -17,7 +17,16 @@ namespace CrawfisSoftware.Events
     /// and lazily initialized, so that race cannot occur.</para>
     /// <para>Every member here now forwards to <see cref="EventsFor{T}"/>, so the two paths share one
     /// facade and cannot disagree. Existing scene objects keep working unchanged during migration.</para>
+    /// <para><b>Deprecated as of 2.6.0</b>, and scheduled for removal in 3.0. It is deprecated rather
+    /// than removed because a subclass is a <see cref="MonoBehaviour"/>: deleting the type orphans
+    /// every instance authored into a scene or prefab, which is an asset edit each consumer has to
+    /// make on their own schedule. <c>Window &gt; Events &gt; Upgrade Audit</c> lists the subclasses
+    /// still present and what removing them touches.</para>
     /// </remarks>
+    [Obsolete("Use EventsFor<T>: it is static and lazily initialized, so it needs no GameObject and " +
+              "no [DefaultExecutionOrder], and the Awake race this type's subclasses worked around " +
+              "cannot occur. Window > Events > Upgrade Audit lists the subclasses to replace and what " +
+              "removing them touches in your scenes. Scheduled for removal in 3.0.")]
     public class EventsPublisherEnumsSingleton<T> : MonoBehaviour where T : Enum
     {
         public static EventsPublisherEnumsSingleton<T> Instance { get; private set; }

@@ -96,7 +96,8 @@ GameFlowBus.Publish(GameFlowEvents.GameStarting, this, null);
 
 Then delete the singleton subclasses and the execution-order attributes. The old
 singleton still works and forwards to the same facade, so the call sites can move file by
-file.
+file. As of 2.6.0 it is `[Obsolete]`, so each remaining subclass declaration reports itself
+as a compiler warning; removal is planned for 3.0.
 
 The deletion itself is not code-only, which is easy to miss. A subclass is a
 `MonoBehaviour`, so removing it orphans every instance authored into a scene and leaves a

@@ -5,6 +5,55 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-09-02
+
+### Fixed
+
+- **Events were never cleared when play mode ended.** `ClearEventsMenu` is
+  `[InitializeOnLoad]`, but the method that subscribes to
+  `EditorApplication.playModeStateChanged` was named `EventLoggingMenu()` — the name of the
+  class it was copied from — so it was an ordinary private method rather than the static
+  constructor `[InitializeOnLoad]` calls, and nothing ever registered the handler. The
+  **Clear Events on Exiting Play Mode** toggle it guarded could not be switched on either:
+  the menu item had a `[MenuItem(..., true)]` validator but no action method, so clicking it
+  did nothing and it always read as off. The feature had never run in any project.
+
+### Changed
+
+- **Clearing on leaving play mode is now unconditional**, and the toggle is gone with it.
+  `EventsPublisher` is static state that `EventsRegistry.ResetStaticState` deliberately did
+  not touch, so with *Enter Play Mode Options* set to skip the domain reload it carried the
+  previous session's subscriptions — delegates bound to destroyed objects — into the next
+  run. Clearing explicitly rather than relying on the domain reload keeps this correct
+  whichever way that project setting is set, which is the same reasoning the registry reset
+  already followed.
+
+  The clear runs at `EnteredEditMode` rather than `ExitingPlayMode`, which is the point
+  teardown has finished: an `OnDestroy` that unsubscribes, or that publishes a shutdown
+  event, still sees the subscribers it expects. It clears subscriptions, registered names
+  and retained values on every frame of the publisher stack; it does not unwind the stack
+  itself, so a frame pushed and never popped survives, empty.
+
+  What this costs: **List Current Subscribers** reports nothing once play mode has ended.
+  Inspect a subscription leak while still in play mode.
+
+- `ClearEventsMenu.IsEnabled` is removed along with the toggle it backed. Public, and
+  therefore a source-breaking change in principle, but it was editor-only `SessionState`
+  and nothing could set it.
+
+### Deprecated
+
+- `EventsPublisherEnumsSingleton<T>` is `[Obsolete]`, so every remaining subclass
+  declaration now reports itself as a compiler warning. Use `EventsFor<T>`: static, lazily
+  initialized, needs no GameObject and no `[DefaultExecutionOrder]`, so the `Awake` race the
+  singleton's subclasses worked around cannot occur. Behavior is unchanged — the singleton
+  still forwards to the same facade — and **Window > Events > Upgrade Audit** lists the
+  subclasses to replace and what removing them touches in your scenes.
+
+  Deprecated rather than removed because a subclass is a `MonoBehaviour`: deleting the type
+  orphans every instance authored into a scene or prefab, which is an asset edit each
+  consumer has to make on their own schedule. Removal is planned for 3.0.
+
 ## [2.5.1] - 2026-08-29
 
 ### Fixed
