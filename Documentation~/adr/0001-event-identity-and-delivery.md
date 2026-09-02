@@ -465,6 +465,16 @@ value lives in the publisher frame that was top when it was published, and `Pop(
 discards it. `Clear()` drops retained state too, and `ClearEventsMenu`'s existing
 "clear on exiting play mode" toggle already covers the editor loop.
 
+#### Correction: the toggle covered nothing
+
+That last claim was wrong, and was checked no further than the toggle's existence. The
+handler was never registered — `ClearEventsMenu` is `[InitializeOnLoad]`, but its
+would-be static constructor carried the name of the class it was copied from, making it
+an ordinary private method — and the menu item had a validator but no action, so the
+toggle could not be switched on either. It had never run in any project. Fixed in 2.6.0,
+where the clear is unconditional and runs at `EnteredEditMode`, after teardown, so an
+`OnDestroy` that unsubscribes or publishes still sees the subscribers it expects.
+
 #### Correction: retention is top-frame only, not per-frame
 
 An earlier draft said a retained value "lives in the frame it was published into"
@@ -606,6 +616,13 @@ Two supporting pieces:
   cached facades and prefix claims. A no-op when domain reload is enabled (the current
   setting), correct when it is not. It deliberately does **not** clear
   `EventsPublisher` itself; dropping live subscriptions stays the opt-in editor toggle.
+  **Revised in 2.6.0** — the toggle was dead code (see *Correction: the toggle covered
+  nothing*), and an opt-in default left the publisher carrying a dead session's
+  subscribers whenever the domain reload is skipped. The editor now clears it
+  unconditionally once play mode ends. The runtime reset still does not touch the
+  publisher: within a *build*, ordering among `SubsystemRegistration` entry points is
+  undefined, so clearing there could discard a subscription made by a consumer's own
+  entry point in the same phase.
 
 #### Defect found and fixed in the Stage 0 collision detector
 

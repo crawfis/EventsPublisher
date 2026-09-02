@@ -26,8 +26,11 @@ private void Die()
 }
 ```
 
-`EventsPublisherEnumsSingleton<T>` still works and forwards to the same facade, so
-existing scene objects keep running unchanged.
+`EventsPublisherEnumsSingleton<T>` is deprecated as of 2.6.0 and will be removed in 3.0.
+It still works and forwards to the same facade, so existing scene objects keep running
+unchanged — but a subclass now compiles with an obsolete warning. **Window > Events >
+Upgrade Audit** lists the subclasses to replace and what removing them touches in your
+scenes.
 
 ## Delivery policy
 
@@ -177,6 +180,13 @@ reports publishing an event name no frame has registered. Without it, a misspell
 reaches no subscriber while still notifying "all events" subscribers, so the logger
 prints it and the system looks healthy. It also reports a publish whose payload is not
 what the event declared it carries, naming the sender.
+
+**CrawfisSoftware > Events** also has *Log Events* (logs every publish while in play
+mode), *List Current Subscribers*, and *Clear Now*. Subscriptions, registered names and
+retained values are cleared automatically once play mode ends — unconditionally as of
+2.6.0, because with *Enter Play Mode Options* set to skip the domain reload the publisher
+is static state that would otherwise carry a dead session's subscribers into the next run.
+Inspect a subscription leak while still in play mode; afterwards there is nothing to list.
 
 ## Upgrading an existing project
 
