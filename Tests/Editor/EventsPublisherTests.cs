@@ -77,6 +77,81 @@ namespace CrawfisSoftware.Events.Tests
             Assert.AreEqual(1, Log.Count, "the second publish should deliver exactly once");
         }
 
+        // ---- what the reports say about who was involved ----
+
+        /// <summary>A handler target whose ToString says "null", as a destroyed Unity object's does.</summary>
+        private sealed class ToStringSaysNull
+        {
+            public void Handle(string e, object s, object d) => throw new InvalidOperationException("boom");
+            public override string ToString() => "null";
+        }
+
+        /// <summary>A sender whose ToString throws, as one caught mid-teardown can.</summary>
+        private sealed class ToStringThrows
+        {
+            public override string ToString() => throw new InvalidOperationException("no string for you");
+        }
+
+        /// <summary>A handler target that is a real Unity object, so that it can be destroyed.</summary>
+        private sealed class DestroyableTarget : ScriptableObject
+        {
+            // Touching a Unity member of a destroyed object throws MissingReferenceException.
+            public void Handle(string e, object s, object d) { _ = name; }
+        }
+
+        [Test]
+        public void ThrowingHandler_IsReportedByMethod_NotByItsTargetsToString()
+        {
+            // A destroyed MonoBehaviour's ToString returns "null", which made the report read
+            // "Exception publishing C to null" — naming nothing that could be found.
+            LogAssert.Expect(LogType.Error, new Regex(@"Exception publishing C to .*ToStringSaysNull\.Handle"));
+            Bus.RegisterEvent("C");
+            Bus.SubscribeToEvent("C", new ToStringSaysNull().Handle);
+
+            Bus.PublishEvent("C", null, null);
+        }
+
+        [Test]
+        public void ThrowingHandler_OnADestroyedObject_IsReportedAsDestroyed()
+        {
+            LogAssert.Expect(LogType.Error, new Regex(@"Exception publishing C to .*DestroyableTarget\.Handle \(destroyed\)"));
+            var target = ScriptableObject.CreateInstance<DestroyableTarget>();
+            Bus.RegisterEvent("C");
+            Bus.SubscribeToEvent("C", target.Handle);
+            UnityEngine.Object.DestroyImmediate(target);
+
+            Bus.PublishEvent("C", null, null);
+        }
+
+        [Test]
+        public void StrictMode_SurvivesASenderWhoseToStringThrows()
+        {
+            // The report is formatted outside the drain's guard, so a throwing ToString escaped
+            // PublishEvent itself, out of the publisher's own code.
+            LogAssert.Expect(LogType.Error, new Regex(@"published by .*ToStringThrows.*is not registered"));
+
+            Assert.DoesNotThrow(() => Bus.PublishEvent("GameFlowEvents/Typoo", new ToStringThrows(), null));
+        }
+
+        [Test]
+        public void PayloadMismatch_SurvivesASenderWhoseToStringThrows()
+        {
+            EventId<string> typed = EventId<string>.Of("Typed/Sender");
+            typed.Register();
+            LogAssert.Expect(LogType.Error, new Regex(@"published by .*ToStringThrows.*declared to carry System.String"));
+
+            Assert.DoesNotThrow(() => Bus.PublishEvent("Typed/Sender", new ToStringThrows(), 12345));
+        }
+
+        [Test]
+        public void ANullSender_IsReportedAsNull_NotAsNothing()
+        {
+            // String interpolation renders null as nothing: "was published by  but is not registered".
+            LogAssert.Expect(LogType.Error, new Regex(@"published by null but is not registered"));
+
+            Bus.PublishEvent("GameFlowEvents/Typoo", null, null);
+        }
+
         [Test]
         public void WrongPayloadCast_IsContainedInTheHandler()
         {

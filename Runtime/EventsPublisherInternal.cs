@@ -284,14 +284,16 @@ namespace CrawfisSoftware.Events
                     {
                         try
                         {
+                            // Named by method, not by the target's ToString: a destroyed Unity object
+                            // answers ToString with "null", and that is the commonest target here.
                             UnityEngine.Debug.LogError(
-                                $"Exception publishing {message.eventName} to {callback.Target}: {e}");
+                                $"Exception publishing {message.eventName} to {Describe.Handler(callback)}: {e}");
                         }
                         catch (Exception loggingFailure)
                         {
-                            // Formatting the message runs ToString on the handler's target and on the
-                            // exception, either of which can itself throw. A log line must never abort
-                            // the drain and discard the callbacks still queued.
+                            // Formatting the message runs ToString on the exception, which can itself
+                            // throw. A log line must never abort the drain and discard the callbacks
+                            // still queued.
                             UnityEngine.Debug.LogError(
                                 $"Exception publishing {message.eventName}; the details could not be formatted " +
                                 $"({loggingFailure.GetType().Name} thrown while logging {e.GetType().Name}).");
