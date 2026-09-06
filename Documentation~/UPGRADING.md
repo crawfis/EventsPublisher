@@ -231,7 +231,10 @@ in a project that still has raw-string publishes** — which most do, and will k
   through 2.6.0 with that setting, a policy declared with `RegisterEvent(name, policy)`
   reverted to `Transient` on the second play, a payload declared with `EventId<T>.Of`
   stopped being checked, and until 2.6.0 the previous run's Sticky values leaked into the
-  next; see the README section *Entering Play mode without domain reload*.
+  next; see the README section *Entering Play mode without domain reload*. The project's
+  own singletons and statics are a separate job: `fast-play-mode-prompt.md` in this folder
+  is a general prompt, not specific to this package, for finding, classifying and replacing
+  them.
 
 ## Turning the diagnostic off
 

@@ -5,6 +5,22 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2026-09-06
+
+Documentation only; no code change.
+
+### Added
+
+- `Documentation~/fast-play-mode-prompt.md` — a general prompt, not specific to this
+  package, for the singletons and static state in a Unity project itself when Play mode is
+  entered without a domain reload, Unity 6.6's default for new projects. It classifies every
+  static as a declaration to keep or runtime state to reset; catalogues the singleton shapes
+  — a `MonoBehaviour` with a static `Instance`, a static blackboard class, a `GameState` of
+  static bools, static events, lazily created singletons, `ScriptableObject` singletons,
+  bootstrap guards, loaded-asset handles — with the fix for each; gives an order of
+  preference for moving away from singletons altogether; and ends with the two-play
+  verification this package was checked with. Linked from the README and UPGRADING.
+
 ## [2.6.2] - 2026-09-06
 
 ### Fixed
@@ -295,6 +311,7 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.6.3]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.3
 [2.6.2]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.2
 [2.6.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.1
 [2.6.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.0

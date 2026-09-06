@@ -211,6 +211,12 @@ after play mode ends. `EventsPublisher.StrictMode` and `EventsDiagnostics.Enable
 ordinary settings and are never reset. *Clear Now* is the stronger operation: it drops
 registrations too, and an annotated family is registered again by the next play entry.
 
+That covers the package's statics. `Documentation~/fast-play-mode-prompt.md` is a general
+prompt, not specific to this package, for the singletons and static state in a Unity project
+itself — a `MonoBehaviour` with a static `Instance`, a static blackboard class, a `GameState`
+of static bools, static events — covering what breaks without a domain reload, what to
+replace each shape with, and the two-play check this package was verified with.
+
 ## Upgrading an existing project
 
 **Window > Events > Upgrade Audit** reflects over the project and reads its assets, then
