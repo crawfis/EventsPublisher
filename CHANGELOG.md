@@ -5,6 +5,41 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-09-06
+
+### Fixed
+
+- Entering Play mode with domain reload disabled — Unity 6.6's default for new projects,
+  and the setting Unity now recommends — wiped the wrong things. The
+  `SubsystemRegistration` hook cleared every declaration: delivery policies, payload
+  types, prefix claims, the domain listing. Those come from code, and the static
+  initializers that make them run once per domain, so from the second play on a policy
+  declared with `RegisterEvent(name, policy)` silently reverted to `Transient`, a payload
+  declared with `EventId<T>.Of` silently stopped being checked, and
+  `EventsRegistry.RegisteredEnumTypes` forgot every family until it was touched again.
+  2.6.0's end-of-play clear compounded it by dropping registrations too, so StrictMode
+  reported an imperatively registered event as unregistered on the next play. Reproduced
+  in Unity 6000.6.0f1 with `DisableDomainReload` set.
+
+  The rule is now the same at both ends of a session. *Runtime state* — subscriptions,
+  retained Sticky values and Replay journals, frames pushed above the root, typed-handler
+  wrappers — is dropped once play mode has finished tearing down. *Declarations* —
+  registrations, policies, payload types, prefix claims, the domain listing, interned ids
+  — are kept, because code can only change through a recompile, which always reloads the
+  domain. The play-entry hook resets the diagnostics and nothing else; it no longer
+  touches the publisher at all, so a subscription made by a consumer's own
+  `SubsystemRegistration` entry point cannot be discarded by ordering within that phase.
+  With domain reload enabled nothing changes.
+- `EventsFor<T>.EnsureRegistered()` registers the family on every call rather than only
+  on the one that builds the facade, so the `[EventEnum]` sweep at `BeforeSceneLoad`
+  restores a family's registrations after *Clear Now*.
+
+### Added
+
+- `PlaySessionResetTests` (20) and `ClearEventsMenuTests` (5), bringing the suite to
+  150. The README gains a section on what survives a play session without domain reload,
+  and ADR 0001 records the corrected reset decision.
+
 ## [2.6.0] - 2026-09-02
 
 ### Fixed
@@ -240,6 +275,9 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.6.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.1
+[2.6.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.0
+[2.5.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.5.1
 [2.5.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.5.0
 [2.4.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.1
 [2.4.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.4.0

@@ -134,19 +134,21 @@ namespace CrawfisSoftware.Events.Tests
         }
 
         [Test]
-        public void Reset_DropsTheWrapperTable()
+        public void Reset_DropsTheWrapperTableTogetherWithTheSubscription()
         {
             Detailed.Subscribe(OnDetailed);
             EventsRegistry.ResetStaticState();
 
-            // The publisher's subscriptions are deliberately not cleared by a reset, so a leaked wrapper
-            // entry would survive here and a later Unsubscribe would remove a handler belonging to the
-            // previous play session.
+            // The wrapper table mirrors the publisher's subscriptions, so a reset has to drop both or
+            // neither. 2.4.1 dropped only the table: the old subscription stayed live, a re-subscribe
+            // added a second one, and the one Unsubscribe that followed could remove only one of them.
             Detailed.Unsubscribe(OnDetailed);
             Detailed.Publish(null, new PayloadData { Value = 5 });
+            Assert.AreEqual("", string.Join(",", Log), "nothing from before the reset may still be subscribed");
 
-            Assert.AreEqual("detailed:5", string.Join(",", Log),
-                "reset must forget the wrapper, leaving the old subscription for Clear() to deal with");
+            Detailed.Subscribe(OnDetailed);
+            Detailed.Publish(null, new PayloadData { Value = 6 });
+            Assert.AreEqual("detailed:6", string.Join(",", Log), "a fresh subscribe after the reset delivers exactly once");
         }
 
         // ---- retained values ----

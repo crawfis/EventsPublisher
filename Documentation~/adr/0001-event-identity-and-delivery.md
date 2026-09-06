@@ -623,6 +623,22 @@ Two supporting pieces:
   publisher: within a *build*, ordering among `SubsystemRegistration` entry points is
   undefined, so clearing there could discard a subscription made by a consumer's own
   entry point in the same phase.
+  **Corrected in 2.6.1** — the reset had the halves backwards. The *runtime state* is
+  what must not carry over — subscriptions, retained values, pushed frames, typed
+  wrappers — and the *declarations* are what must: registrations, policies, payload
+  types, prefix claims, the domain listing, interned ids. A declaration derives from
+  code, and code changes only through a recompile, which always reloads the domain; the
+  static initializer that made it will not run again without one. Wiping them at
+  `SubsystemRegistration` therefore reverted an imperatively declared policy to
+  `Transient` on the second play and switched a declared payload type's check off, both
+  silently, and 2.6.0's full `Clear()` at `EnteredEditMode` added a StrictMode report
+  for every imperatively registered event. Reproduced in Unity 6000.6.0f1 with domain
+  reload off. `EventsRegistry.BeginPlaySession` (the `SubsystemRegistration` hook) now
+  resets the diagnostics and nothing else — the ordering argument above stands, and
+  applies to declarations just as much as to subscriptions — and
+  `EventsRegistry.EndPlaySession`, called by the editor at `EnteredEditMode`, drops the
+  runtime state and keeps the declarations. Pinned by `PlaySessionResetTests` and
+  `ClearEventsMenuTests`.
 
 #### Defect found and fixed in the Stage 0 collision detector
 
@@ -728,11 +744,12 @@ consumers continue to compile.
 
 ### Tests
 
-`Tests/Editor` holds 109 EditMode tests across ten fixtures, covering dispatch ordering
-and isolation, the re-entrant publish completion contract, the static facade and its
-registration timing, all three delivery policies, the interned identity, the Inspector
-catalog and `EventRef`, typed payloads, the late-delivery diagnostic, and the upgrade
-audit's reasoning. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
+`Tests/Editor` holds 150 EditMode tests across thirteen fixtures, covering dispatch
+ordering and isolation, the re-entrant publish completion contract, the static facade and
+its registration timing, all three delivery policies, the interned identity, the Inspector
+catalog and `EventRef`, typed payloads, the late-delivery diagnostic, the upgrade audit's
+reasoning, the event-domain listing, what each end of a play session drops and keeps, and
+the editor's end-of-play drop. `Runtime/AssemblyInfo.cs` grants the test assembly access to internals so each
 test can reset `EventsRegistry`'s static state — a public reset would be a footgun in
 game code.
 
@@ -822,6 +839,12 @@ Not fixed here; they are not identity or timing problems.
    Statics therefore still reset on entering play mode today, so a static registry is
    currently safe. The project is one checkbox away from statics persisting, so the
    registry resets explicitly rather than relying on that.
+   *Confirmed and amended (2.6.1):* that reading of the setting is right — measured in
+   6000.4.3f1, 6000.5.2f1 and 6000.6.0f1, batch and interactive, that combination reads
+   back as `enterPlayModeOptionsEnabled == false` and the domain reloads — but the reset
+   it justified was inverted; see *Play-session reset* under *Implemented:
+   `EventsFor<T>`*. Unity 6.6 makes domain-reload-off the default for new projects, so
+   the checkbox is now the norm rather than the exception.
 5. **Inspector call sites** — adopt a serializable `EventRef` (enum type name +
    member name) with a two-dropdown property drawer, rather than a concrete
    per-family subclass of each generic component. Keeps one component per behavior,

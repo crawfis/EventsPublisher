@@ -47,7 +47,7 @@ Add the package to `testables` in `Packages/manifest.json`:
 { "testables": [ "com.crawfissoftware.eventspublisher" ] }
 ```
 
-Unity only builds a package's tests when the consuming project opts in. 109 EditMode
+Unity only builds a package's tests when the consuming project opts in. 150 EditMode
 tests then appear under **Window > General > Test Runner**. Running them once in your
 project is a genuine check of the project's setup, not a formality.
 
@@ -223,6 +223,15 @@ in a project that still has raw-string publishes** — which most do, and will k
 - **`EventId` needs nothing from you.** The publisher keys on an interned handle
   internally and handler signatures did not change. It only becomes visible if you choose
   to hold one.
+- **Domain reload off is supported from 2.6.1.** Unity 6.6 defaults new projects to
+  entering Play mode without a domain reload. On every play entry, and again once play
+  mode has torn down, the package drops the previous session's subscriptions, retained
+  values and pushed frames, and keeps every declaration — registrations, policies,
+  payload types — so what you declared from a static initializer stays declared. On 2.4.0
+  through 2.6.0 with that setting, a policy declared with `RegisterEvent(name, policy)`
+  reverted to `Transient` on the second play, a payload declared with `EventId<T>.Of`
+  stopped being checked, and until 2.6.0 the previous run's Sticky values leaked into the
+  next; see the README section *Entering Play mode without domain reload*.
 
 ## Turning the diagnostic off
 

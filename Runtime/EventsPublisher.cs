@@ -36,6 +36,28 @@ namespace CrawfisSoftware.Events
 
         private readonly Stack<IEventsPublisher<string>> _eventsPublishers = new Stack<IEventsPublisher<string>>();
 
+        internal int FrameCount => _eventsPublishers.Count;
+
+        /// <summary>
+        /// Discards the previous play session's runtime state: every frame pushed above the root, and
+        /// the root frame's subscriptions and retained values. Registrations survive.
+        /// </summary>
+        /// <remarks>Called by <see cref="EventsRegistry.EndPlaySession"/> once play mode has torn down. A frame
+        /// pushed for a scene that was never popped — because play mode ended first — would otherwise
+        /// stay on the stack, one more per play session, still holding that scene's retained
+        /// values.</remarks>
+        internal void DropSessionState()
+        {
+            while (_eventsPublishers.Count > 1) _eventsPublishers.Pop();
+            if (_eventsPublishers.Count == 0)
+            {
+                Push();
+                return;
+            }
+            if (_eventsPublishers.Peek() is EventsPublisherInternal root) root.DropSessionState();
+            else _eventsPublishers.Peek().Clear();
+        }
+
         /// <inheritdoc/>
         public void Push()
         {
@@ -183,7 +205,9 @@ namespace CrawfisSoftware.Events
         /// keeps the policy next to the event.</para>
         /// <para>Call this from a static initializer rather than from <c>Awake</c>. The policy must be
         /// declared before the event is first published, or the first publish — often the one that
-        /// matters most during boot — is not retained.</para>
+        /// matters most during boot — is not retained. A declaration made there survives entering Play
+        /// mode without a domain reload: the play-session reset keeps declarations and drops only the
+        /// previous session's runtime state.</para>
         /// <para>First explicit declaration wins; a second, differing one is reported and ignored.</para>
         /// </remarks>
         public void RegisterEvent(string eventName, EventDelivery delivery)

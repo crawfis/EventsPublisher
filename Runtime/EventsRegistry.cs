@@ -269,23 +269,76 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
-        /// Clears static state carried over from a previous play session.
+        /// Starts a play session. Resets the diagnostics and nothing else.
         /// </summary>
         /// <remarks>
         /// <para>Runs at <see cref="RuntimeInitializeLoadType.SubsystemRegistration"/>, the earliest
-        /// runtime hook, so it completes before the <see cref="RuntimeInitializeLoadType.BeforeSceneLoad"/>
-        /// sweep below.</para>
-        /// <para>With domain reload enabled this is a no-op on already-empty state. It matters when
-        /// <em>Enter Play Mode Options</em> has domain reload disabled, where statics survive between
-        /// play sessions. Resetting explicitly rather than relying on that project setting keeps this
-        /// correct either way.</para>
-        /// <para>This deliberately does not clear <see cref="EventsPublisher"/> itself. Dropping live
-        /// subscriptions is a behavioral choice the project already exposes through the editor's
-        /// "Clear Events on Exiting Play Mode" toggle, and is not silently taken here.</para>
+        /// runtime hook, on every play entry. With domain reload on it finds empty state. With it off —
+        /// Unity 6.6's default for new projects — the statics carry over from the previous session,
+        /// and the question is which of them should.</para>
+        /// <para><b>Declarations</b> should: registrations, delivery policies, payload types, prefix
+        /// claims, the domain listing, the intern table. Each derives from code, and code changes only
+        /// through a recompile, which always reloads the domain. The static initializers that declared
+        /// them run once per domain and would not run again, so dropping them here silently reverted
+        /// an imperatively declared policy to Transient on the second play and switched a declared
+        /// payload type's check off — which is what 2.4.0 through 2.6.0 did.</para>
+        /// <para><b>Runtime state</b> — subscriptions, retained values, pushed frames — should not
+        /// carry over, but it is not dropped here either. Ordering among
+        /// <c>SubsystemRegistration</c> entry points is undefined, so a drop in this phase could
+        /// discard a subscription a consumer's own entry point had just made. It is dropped by
+        /// <see cref="EndPlaySession"/> instead, once the previous session has finished tearing down,
+        /// which the editor calls from <c>EditorApplication.playModeStateChanged</c>. A build starts
+        /// from a fresh process and needs neither.</para>
+        /// <para>The diagnostics are reset here rather than there because the upgrade audit reads them
+        /// after play mode ends. Cleared at the start of a session, what it reads is one boot sequence
+        /// rather than an editor session's accumulated noise.</para>
         /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        internal static void BeginPlaySession()
+        {
+            EventsDiagnostics.Reset();
+        }
+
+        /// <summary>
+        /// Ends a play session: drops its runtime state and keeps every declaration.
+        /// </summary>
+        /// <remarks>
+        /// <para>Called by the editor once play mode has finished tearing down — at
+        /// <c>EnteredEditMode</c> rather than <c>ExitingPlayMode</c>, so an <c>OnDestroy</c> that
+        /// unsubscribes or publishes a shutdown event still finds the subscribers it expects.</para>
+        /// <para>What goes: subscriptions and "all events" subscribers, Sticky values and Replay
+        /// journals, frames pushed above the root, and the typed-handler wrapper table, which mirrors
+        /// the subscriptions and goes with them. Each describes objects and publishes of the session
+        /// that just ended: a subscription that outlived its session targets a destroyed object or
+        /// duplicates the one its replacement will make, and a retained value would be replayed to the
+        /// next session's subscribers with a sender that no longer exists.</para>
+        /// <para>What stays: every declaration, for the reasons given on
+        /// <see cref="BeginPlaySession"/>, and the diagnostics, which the audit reads after this
+        /// point. <see cref="EventsPublisher.Clear"/> is the stronger operation behind the editor's
+        /// <b>Clear Now</b>; it drops registrations too.</para>
+        /// </remarks>
+        internal static void EndPlaySession()
+        {
+            ((EventsPublisher)EventsPublisher.Instance).DropSessionState();
+            TypedSubscriptions.Clear();
+        }
+
+        /// <summary>
+        /// Test isolation only: drops declarations and runtime state alike, so each test starts from
+        /// nothing.
+        /// </summary>
+        /// <remarks>
+        /// <para>Not a runtime hook, and must not become one. Wired to play entry it would be the bug
+        /// <see cref="BeginPlaySession"/> describes.</para>
+        /// <para>The intern table is deliberately not cleared even here. Handles are values that callers
+        /// may still hold; recycling them would silently repoint an <see cref="EventId"/> at a different
+        /// event. It is bounded by the number of distinct event names in the project, so letting it
+        /// persist costs nothing.</para>
+        /// </remarks>
         internal static void ResetStaticState()
         {
+            EndPlaySession();
+            BeginPlaySession();
             for (int i = 0; i < _resetHandlers.Count; i++)
             {
                 try { _resetHandlers[i](); }
@@ -298,14 +351,6 @@ namespace CrawfisSoftware.Events
             _registeredEnums.Clear();
             _policies.Clear();
             _payloadTypes.Clear();
-            TypedSubscriptions.Clear();
-            // Cleared at the start of a play session, not the end, so what the audit reads afterwards is
-            // one boot sequence rather than an editor session's accumulated noise.
-            EventsDiagnostics.Reset();
-            // The intern table is deliberately NOT cleared. Handles are values that callers may still
-            // hold; recycling them would silently repoint an EventId at a different event. It is bounded
-            // by the number of distinct event names in the project, so letting it persist costs nothing.
-
         }
 
         /// <summary>

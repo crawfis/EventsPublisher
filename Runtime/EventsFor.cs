@@ -44,14 +44,21 @@ namespace CrawfisSoftware.Events
         }
 
         /// <summary>
-        /// Registers every member of <typeparamref name="T"/> if that has not happened yet.
+        /// Registers every member of <typeparamref name="T"/> with the current publisher frame.
         /// </summary>
-        /// <remarks>Rarely needed directly — publishing or subscribing does this implicitly. Call it to
-        /// register the family ahead of a raw-string publish, or mark the enum with
-        /// <see cref="EventEnumAttribute"/> to have it called automatically before the first scene loads.</remarks>
+        /// <remarks>
+        /// <para>Rarely needed directly — the first publish or subscribe through this type registers the
+        /// family. Call it to register the family ahead of a raw-string publish, or mark the enum with
+        /// <see cref="EventEnumAttribute"/> to have it called automatically before the first scene
+        /// loads.</para>
+        /// <para>Idempotent, and it registers on every call rather than only on the one that builds the
+        /// facade, so the <see cref="EventEnumAttribute"/> sweep restores a family's registrations after
+        /// an explicit <c>Clear()</c> — the editor's "Clear Now" and "Clear Events on Exiting Play
+        /// Mode" — even though the facade is cached.</para>
+        /// </remarks>
         public static void EnsureRegistered()
         {
-            _ = Facade;
+            Facade.RegisterKnownEvents();
         }
 
         private static void Reset()
