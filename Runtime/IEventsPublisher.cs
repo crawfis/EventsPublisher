@@ -42,8 +42,10 @@ namespace CrawfisSoftware.Events
         /// <remarks>The escape hatch for names no enum can annotate — runtime-computed names and
         /// Inspector-authored strings. For an enum family, prefer <see cref="EventDeliveryAttribute"/>
         /// on the member. Declare from a static initializer rather than <c>Awake</c>: the policy must
-        /// be in place before the event is first published, or that first publish is not retained.
-        /// First declaration wins; a differing second one is reported and ignored.</remarks>
+        /// be in place before the event is first published, or that first publish is not retained. A
+        /// declaration survives entering Play mode without a domain reload, which drops only the
+        /// previous session's runtime state. First declaration wins; a differing second one is reported
+        /// and ignored.</remarks>
         void RegisterEvent(T eventName, EventDelivery delivery);
 
         /// <summary>

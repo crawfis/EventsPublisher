@@ -336,6 +336,25 @@ namespace CrawfisSoftware.Events
         {
         }
 
+        /// <summary>
+        /// Drops what a play session accumulated — subscriptions, "all events" subscribers, retained
+        /// values, anything still queued — and keeps the registrations.
+        /// </summary>
+        /// <remarks>A registration is a declaration: the event exists. The keys stay so that
+        /// <see cref="EventsPublisher.StrictMode"/> still knows the name and the editor menu still lists
+        /// it; only the delegates behind them go. <see cref="Clear"/> is the stronger operation that
+        /// drops the registrations too.</remarks>
+        internal void DropSessionState()
+        {
+            var registered = new List<EventId>(events.Keys);
+            foreach (EventId eventId in registered) events[eventId] = NullCallback;
+            allSubscribers.Clear();
+            _stickyValues.Clear();
+            _journals.Clear();
+            _callbackQueue.Clear();
+            _drainDepth = 0;
+        }
+
         public void Clear()
         {
             events.Clear();

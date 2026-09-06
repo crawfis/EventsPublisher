@@ -182,11 +182,34 @@ prints it and the system looks healthy. It also reports a publish whose payload 
 what the event declared it carries, naming the sender.
 
 **CrawfisSoftware > Events** also has *Log Events* (logs every publish while in play
-mode), *List Current Subscribers*, and *Clear Now*. Subscriptions, registered names and
-retained values are cleared automatically once play mode ends — unconditionally as of
-2.6.0, because with *Enter Play Mode Options* set to skip the domain reload the publisher
-is static state that would otherwise carry a dead session's subscribers into the next run.
-Inspect a subscription leak while still in play mode; afterwards there is nothing to list.
+mode), *List Current Subscribers*, and *Clear Now*. Subscriptions and retained values are
+dropped automatically once play mode has finished tearing down, and again on the next
+play entry; registrations and declarations stay (see the next section). Inspect a
+subscription leak while still in play mode; afterwards there is nothing to list.
+
+## Entering Play mode without domain reload
+
+Unity 6.6 creates new projects with domain reload off when entering Play mode, and
+recommends that setting everywhere. Statics then survive from one play session to the
+next, so the package resets itself at `SubsystemRegistration` on every play entry, and
+the editor does the same once play mode has finished tearing down:
+
+| Dropped at each play entry | Kept |
+|---|---|
+| subscriptions, including "all events" subscribers | event registrations |
+| Sticky values and Replay journals | delivery policies, whether from an attribute or `RegisterEvent(name, policy)` |
+| publisher frames pushed above the root | declared payload types, prefix claims, the domain listing |
+| typed-handler wrappers, `EventsDiagnostics` counts | interned `EventId`s |
+
+Runtime state belongs to a session. Declarations derive from code, and code changes
+only through a recompile, which always reloads the domain — so a policy or payload type
+declared from a static initializer stays declared even though that initializer runs
+once. With domain reload on, the reset runs against empty state and changes nothing.
+
+The end-of-play drop is the same minus the diagnostics, which the upgrade audit reads
+after play mode ends. `EventsPublisher.StrictMode` and `EventsDiagnostics.Enabled` are
+ordinary settings and are never reset. *Clear Now* is the stronger operation: it drops
+registrations too, and an annotated family is registered again by the next play entry.
 
 ## Upgrading an existing project
 
