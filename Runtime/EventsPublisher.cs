@@ -152,7 +152,7 @@ namespace CrawfisSoftware.Events
         {
             if (string.IsNullOrEmpty(eventName))
             {
-                UnityEngine.Debug.LogError($"EventsPublisher: published a null or empty event name from {sender}.");
+                UnityEngine.Debug.LogError($"EventsPublisher: published a null or empty event name from {Describe.Sender(sender)}.");
                 return;
             }
             foreach (IEventsPublisher<string> publisher in _eventsPublishers)
@@ -161,7 +161,7 @@ namespace CrawfisSoftware.Events
                     return;
             }
             UnityEngine.Debug.LogError(
-                $"EventsPublisher: '{eventName}' was published by {sender} but is not registered, so no subscriber will receive it. " +
+                $"EventsPublisher: '{eventName}' was published by {Describe.Sender(sender)} but is not registered, so no subscriber will receive it. " +
                 "Check for a misspelled event name. Set EventsPublisher.StrictMode = false to silence this.");
         }
 
@@ -184,7 +184,7 @@ namespace CrawfisSoftware.Events
 
             string actual = data == null ? "null" : data.GetType().FullName;
             UnityEngine.Debug.LogError(
-                $"EventsPublisher: '{eventName}' was published by {sender} with a payload of {actual}, but it is " +
+                $"EventsPublisher: '{eventName}' was published by {Describe.Sender(sender)} with a payload of {actual}, but it is " +
                 $"declared to carry {declared.FullName}. Subscribers typed to that payload will be skipped. " +
                 "Set EventsPublisher.StrictMode = false to silence this.");
         }

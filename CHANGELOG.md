@@ -5,6 +5,26 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-09-06
+
+### Fixed
+
+- A handler that throws is reported by its method — `Namespace.Type.Method` — rather than by
+  its target's `ToString()`. A destroyed `MonoBehaviour` answers `ToString()` with `"null"`,
+  so the report for the most common case, a handler left subscribed on an object that no
+  longer exists, read "Exception publishing X to null" and named nothing. It now reads
+  "Exception publishing X to Game.Player.OnDied (destroyed)".
+- The StrictMode reports — unregistered name, mismatched payload — formatted the sender with
+  string interpolation outside any guard, so a sender whose `ToString()` throws escaped
+  `PublishEvent` itself, out of the publisher's own code and into the caller's. The sender is
+  now described defensively: `null` reads as `null` rather than as nothing, a destroyed Unity
+  object is marked as such, and a throwing `ToString()` falls back to the type name and says
+  what was thrown.
+
+### Added
+
+- Five tests in `EventsPublisherTests` pinning the report wording, bringing the suite to 155.
+
 ## [2.6.1] - 2026-09-06
 
 ### Fixed
@@ -275,6 +295,7 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.6.2]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.2
 [2.6.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.1
 [2.6.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.0
 [2.5.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.5.1
