@@ -5,6 +5,21 @@ All notable changes to this package are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 package adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2026-09-06
+
+Documentation only; no code change.
+
+### Added
+
+- `Documentation~/fast-play-mode-prompt.md` — a project-agnostic prompt for making a
+  consuming project's *own* static state correct when Play mode is entered without a domain
+  reload, Unity 6.6's default for new projects. It complements `upgrade-prompt.md`: that one
+  moves the event calls off `EventsPublisherEnumsSingleton<T>`; this one classifies every
+  static as a declaration to keep or runtime state to reset, gives the fix per kind
+  (singleton `Instance`, `bool` mirrors, static events, bootstrap guards, publisher frames,
+  assets loaded during play), and ends with the two-play verification the package itself was
+  checked with. Linked from the README and UPGRADING.
+
 ## [2.6.2] - 2026-09-06
 
 ### Fixed
@@ -295,6 +310,7 @@ wrong.
 
 - Initial package layout: assembly definitions, editor tooling, event subscriber logging.
 
+[2.6.3]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.3
 [2.6.2]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.2
 [2.6.1]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.1
 [2.6.0]: https://github.com/crawfis/EventsPublisher/releases/tag/v2.6.0

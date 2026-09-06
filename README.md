@@ -211,6 +211,11 @@ after play mode ends. `EventsPublisher.StrictMode` and `EventsDiagnostics.Enable
 ordinary settings and are never reset. *Clear Now* is the stronger operation: it drops
 registrations too, and an annotated family is registered again by the next play entry.
 
+That covers the package's statics. For the project's own — singleton `Instance` fields,
+`bool` mirrors, static events, bootstrap guards — `Documentation~/fast-play-mode-prompt.md`
+is a project-agnostic prompt that classifies each one as a declaration to keep or runtime
+state to reset, and ends with the two-play check the package itself was verified with.
+
 ## Upgrading an existing project
 
 **Window > Events > Upgrade Audit** reflects over the project and reads its assets, then
