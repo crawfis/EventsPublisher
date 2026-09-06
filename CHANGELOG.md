@@ -11,14 +11,15 @@ Documentation only; no code change.
 
 ### Added
 
-- `Documentation~/fast-play-mode-prompt.md` — a project-agnostic prompt for making a
-  consuming project's *own* static state correct when Play mode is entered without a domain
-  reload, Unity 6.6's default for new projects. It complements `upgrade-prompt.md`: that one
-  moves the event calls off `EventsPublisherEnumsSingleton<T>`; this one classifies every
-  static as a declaration to keep or runtime state to reset, gives the fix per kind
-  (singleton `Instance`, `bool` mirrors, static events, bootstrap guards, publisher frames,
-  assets loaded during play), and ends with the two-play verification the package itself was
-  checked with. Linked from the README and UPGRADING.
+- `Documentation~/fast-play-mode-prompt.md` — a general prompt, not specific to this
+  package, for the singletons and static state in a Unity project itself when Play mode is
+  entered without a domain reload, Unity 6.6's default for new projects. It classifies every
+  static as a declaration to keep or runtime state to reset; catalogues the singleton shapes
+  — a `MonoBehaviour` with a static `Instance`, a static blackboard class, a `GameState` of
+  static bools, static events, lazily created singletons, `ScriptableObject` singletons,
+  bootstrap guards, loaded-asset handles — with the fix for each; gives an order of
+  preference for moving away from singletons altogether; and ends with the two-play
+  verification this package was checked with. Linked from the README and UPGRADING.
 
 ## [2.6.2] - 2026-09-06
 
